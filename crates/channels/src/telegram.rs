@@ -13,9 +13,9 @@ use frankenstein::ParseMode;
 use frankenstein::client_reqwest::Bot;
 use frankenstein::methods::{
     EditMessageTextParams, GetUpdatesParams, SendAudioParams, SendDocumentParams,
-    SendMessageParams, SendPhotoParams, SendVideoParams, SendVoiceParams,
+    SendMessageParams, SendPhotoParams, SendVideoParams, SendVoiceParams, SetMyCommandsParams,
 };
-use frankenstein::types::{AllowedUpdate, ChatId, Message as TgMessage};
+use frankenstein::types::{AllowedUpdate, BotCommand, ChatId, Message as TgMessage};
 use frankenstein::updates::UpdateContent;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
@@ -87,6 +87,10 @@ impl TelegramAdapter {
         // Wrap in Arc so individual message handlers can be spawned as
         // independent tasks, allowing different sessions to run concurrently.
         let this = Arc::new(self);
+
+        // Register slash commands with Telegram so they appear in autocomplete.
+        this.register_bot_commands().await;
+
         info!(user_id = %this.user_id, "telegram adapter started");
         let mut offset: Option<i64> = None;
 
@@ -140,6 +144,50 @@ impl TelegramAdapter {
         }
 
         info!(user_id = %this.user_id, "telegram adapter stopped");
+    }
+
+    /// Register bot commands with Telegram so they appear in the autocomplete menu.
+    async fn register_bot_commands(&self) {
+        let commands = vec![
+            BotCommand {
+                command: "new".to_owned(),
+                description: "Start a new session".to_owned(),
+            },
+            BotCommand {
+                command: "sessions".to_owned(),
+                description: "List sessions".to_owned(),
+            },
+            BotCommand {
+                command: "switch".to_owned(),
+                description: "Switch to a session".to_owned(),
+            },
+            BotCommand {
+                command: "cancel".to_owned(),
+                description: "Cancel the active turn".to_owned(),
+            },
+            BotCommand {
+                command: "cancelall".to_owned(),
+                description: "Cancel active turns in all sessions".to_owned(),
+            },
+            BotCommand {
+                command: "status".to_owned(),
+                description: "Show current session info".to_owned(),
+            },
+            BotCommand {
+                command: "help".to_owned(),
+                description: "Show help".to_owned(),
+            },
+        ];
+        let params = SetMyCommandsParams {
+            commands,
+            scope: None,
+            language_code: None,
+        };
+        if let Err(e) = self.bot.set_my_commands(&params).await {
+            warn!(error = %e, "failed to register telegram bot commands");
+        } else {
+            info!("telegram bot commands registered");
+        }
     }
 
     async fn handle_message(&self, message: &TgMessage, cancel: &CancellationToken) {
@@ -486,9 +534,19 @@ impl TelegramAdapter {
                         .await;
                     return true;
                 }
+                // Support prefix matching: the user may supply a short prefix
+                // (e.g. the 8-char ID shown by /sessions) instead of the full UUID.
+                let resolved_id = match self.resolve_session_id_by_prefix(args).await {
+                    Ok(id) => id,
+                    Err(msg) => {
+                        self.send_reply(chat_id, thread_id, &format!("❌ {msg}"))
+                            .await;
+                        return true;
+                    }
+                };
                 match self
                     .gateway
-                    .create_or_get_session(&self.user_id, Some(args), "default", CHANNEL_ID)
+                    .create_or_get_session(&self.user_id, Some(&resolved_id), "default", CHANNEL_ID)
                     .await
                 {
                     Ok(session) => {
@@ -605,6 +663,54 @@ impl TelegramAdapter {
                 true
             }
             _ => false,
+        }
+    }
+
+    /// Resolve a (possibly prefix-shortened) session ID to the full session ID.
+    ///
+    /// If the argument is an exact match, returns it directly. Otherwise,
+    /// searches the user's sessions for a unique prefix match.
+    async fn resolve_session_id_by_prefix(&self, prefix: &str) -> Result<String, String> {
+        // First, try exact match via the gateway (fast path).
+        if self
+            .gateway
+            .create_or_get_session(&self.user_id, Some(prefix), "default", CHANNEL_ID)
+            .await
+            .is_ok()
+        {
+            return Ok(prefix.to_owned());
+        }
+
+        // Fall back to prefix matching against listed sessions.
+        let sessions = self
+            .gateway
+            .list_user_sessions(&self.user_id, false)
+            .await
+            .map_err(|e| format!("failed to list sessions: {e}"))?;
+
+        let matches: Vec<_> = sessions
+            .iter()
+            .filter(|s| s.parent_session_id.is_none() && s.session_id.starts_with(prefix))
+            .collect();
+
+        match matches.len() {
+            0 => Err(format!("no session found matching `{prefix}`")),
+            1 => Ok(matches[0].session_id.clone()),
+            n => {
+                let previews: Vec<String> = matches
+                    .iter()
+                    .take(5)
+                    .map(|s| {
+                        let short = &s.session_id[..8.min(s.session_id.len())];
+                        let name = s.display_name.as_deref().unwrap_or("(unnamed)");
+                        format!("  {short} — {name}")
+                    })
+                    .collect();
+                Err(format!(
+                    "ambiguous prefix `{prefix}` matches {n} sessions:\n{}",
+                    previews.join("\n")
+                ))
+            }
         }
     }
 
