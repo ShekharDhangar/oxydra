@@ -47,6 +47,7 @@ use types::{
 mod backend;
 pub mod bootstrap;
 pub mod catalog;
+mod config_migration;
 
 pub use bootstrap::{
     BootstrapError, CliOverrides, VmBootstrapRuntime, bootstrap_vm_runtime,
@@ -370,6 +371,7 @@ pub fn load_runner_global_config(
     path: impl AsRef<Path>,
 ) -> Result<RunnerGlobalConfig, RunnerError> {
     let path = path.as_ref().to_path_buf();
+    config_migration::migrate_config_file_if_needed(&path, config_migration::ConfigType::Global)?;
     let contents = fs::read_to_string(&path).map_err(|source| RunnerError::ReadConfig {
         path: path.clone(),
         source,
@@ -385,6 +387,7 @@ pub fn load_runner_global_config(
 
 pub fn load_runner_user_config(path: impl AsRef<Path>) -> Result<RunnerUserConfig, RunnerError> {
     let path = path.as_ref().to_path_buf();
+    config_migration::migrate_config_file_if_needed(&path, config_migration::ConfigType::User)?;
     let contents = fs::read_to_string(&path).map_err(|source| RunnerError::ReadConfig {
         path: path.clone(),
         source,
@@ -1263,6 +1266,21 @@ pub enum RunnerError {
         #[source]
         source: toml::de::Error,
     },
+    #[error("failed to parse runner config document `{path}`: {source}")]
+    ParseConfigDocument {
+        path: PathBuf,
+        #[source]
+        source: toml_edit::TomlError,
+    },
+    #[error("failed to {operation} runner config `{path}`: {source}")]
+    ConfigMigrationIo {
+        operation: &'static str,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("runner config migration for `{path}` failed: {message}")]
+    ConfigMigration { path: PathBuf, message: String },
     #[error(transparent)]
     ConfigValidation(#[from] RunnerConfigError),
     #[error(transparent)]

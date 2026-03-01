@@ -115,13 +115,12 @@ fn fetch_latest_tag(include_prerelease: bool) -> Option<String> {
 /// startup notifications so repeated invocations stay within GitHub's rate
 /// limit.
 pub fn latest_tag(use_cache: bool, include_prerelease: bool) -> Option<String> {
-    if use_cache {
-        if let Some(cache) = load_cache() {
-            if cache_is_fresh(&cache) {
-                tracing::debug!("using cached update-check result");
-                return Some(cache.latest_tag);
-            }
-        }
+    if use_cache
+        && let Some(cache) = load_cache()
+        && cache_is_fresh(&cache)
+    {
+        tracing::debug!("using cached update-check result");
+        return Some(cache.latest_tag);
     }
 
     let tag = fetch_latest_tag(include_prerelease)?;

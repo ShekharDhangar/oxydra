@@ -4,6 +4,8 @@
 # All values shown below are optional. Uncomment and change as needed.
 # For full documentation, see docs/guidebook/08-runner-and-guests.md
 
+config_version = "1.0.1"
+
 # --- Mount path overrides ---
 # Override default workspace mount directories for this user.
 # If omitted, the runner derives paths from <workspace_root>/<user_id>/.

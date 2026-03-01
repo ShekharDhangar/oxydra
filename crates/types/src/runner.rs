@@ -6,6 +6,8 @@ use thiserror::Error;
 pub const DEFAULT_RUNNER_WORKSPACE_ROOT: &str = ".oxydra/workspaces";
 pub const DEFAULT_OXYDRA_VM_IMAGE: &str = "oxydra-vm:latest";
 pub const DEFAULT_SHELL_VM_IMAGE: &str = "shell-vm:latest";
+pub const DEFAULT_RUNNER_CONFIG_VERSION: &str = "1.0.1";
+pub const SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION: u64 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -18,6 +20,8 @@ pub enum SandboxTier {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunnerGlobalConfig {
+    #[serde(default = "default_runner_config_version")]
+    pub config_version: String,
     #[serde(default = "default_runner_workspace_root")]
     pub workspace_root: String,
     #[serde(default)]
@@ -31,6 +35,7 @@ pub struct RunnerGlobalConfig {
 impl Default for RunnerGlobalConfig {
     fn default() -> Self {
         Self {
+            config_version: default_runner_config_version(),
             workspace_root: default_runner_workspace_root(),
             users: BTreeMap::new(),
             default_tier: SandboxTier::default(),
@@ -41,6 +46,8 @@ impl Default for RunnerGlobalConfig {
 
 impl RunnerGlobalConfig {
     pub fn validate(&self) -> Result<(), RunnerConfigError> {
+        validate_runner_config_version(&self.config_version)?;
+
         if self.workspace_root.trim().is_empty() {
             return Err(RunnerConfigError::InvalidWorkspaceRoot);
         }
@@ -104,8 +111,10 @@ impl RunnerGuestImages {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunnerUserConfig {
+    #[serde(default = "default_runner_config_version")]
+    pub config_version: String,
     #[serde(default)]
     pub mounts: RunnerMountPaths,
     #[serde(default)]
@@ -118,8 +127,22 @@ pub struct RunnerUserConfig {
     pub channels: ChannelsConfig,
 }
 
+impl Default for RunnerUserConfig {
+    fn default() -> Self {
+        Self {
+            config_version: default_runner_config_version(),
+            mounts: RunnerMountPaths::default(),
+            resources: RunnerResourceLimits::default(),
+            credential_refs: BTreeMap::default(),
+            behavior: RunnerBehaviorOverrides::default(),
+            channels: ChannelsConfig::default(),
+        }
+    }
+}
+
 impl RunnerUserConfig {
     pub fn validate(&self) -> Result<(), RunnerConfigError> {
+        validate_runner_config_version(&self.config_version)?;
         self.mounts.validate()?;
         self.resources.validate()?;
         validate_credential_refs(&self.credential_refs)?;
@@ -365,6 +388,13 @@ fn default_max_message_length() -> usize {
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum RunnerConfigError {
+    #[error("unsupported runner config_version `{version}`; supported major is {supported_major}")]
+    UnsupportedConfigVersion {
+        version: String,
+        supported_major: u64,
+    },
+    #[error("invalid runner config_version format `{version}`")]
+    InvalidConfigVersionFormat { version: String },
     #[error("runner workspace_root must not be empty")]
     InvalidWorkspaceRoot,
     #[error("runner user id must not be empty")]
@@ -711,10 +741,55 @@ fn default_runner_workspace_root() -> String {
     DEFAULT_RUNNER_WORKSPACE_ROOT.to_owned()
 }
 
+fn default_runner_config_version() -> String {
+    DEFAULT_RUNNER_CONFIG_VERSION.to_owned()
+}
+
 fn default_oxydra_vm_image() -> String {
     DEFAULT_OXYDRA_VM_IMAGE.to_owned()
 }
 
 fn default_shell_vm_image() -> String {
     DEFAULT_SHELL_VM_IMAGE.to_owned()
+}
+
+fn validate_runner_config_version(config_version: &str) -> Result<(), RunnerConfigError> {
+    let major = parse_runner_config_major(config_version)?;
+    if major != SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION {
+        return Err(RunnerConfigError::UnsupportedConfigVersion {
+            version: config_version.trim().to_owned(),
+            supported_major: SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION,
+        });
+    }
+    Ok(())
+}
+
+fn parse_runner_config_major(config_version: &str) -> Result<u64, RunnerConfigError> {
+    let trimmed = config_version.trim();
+    if trimmed.is_empty() {
+        return Err(RunnerConfigError::InvalidConfigVersionFormat {
+            version: config_version.to_owned(),
+        });
+    }
+
+    let mut segments = trimmed.split('.');
+    let major = segments
+        .next()
+        .ok_or_else(|| RunnerConfigError::InvalidConfigVersionFormat {
+            version: config_version.to_owned(),
+        })?
+        .parse::<u64>()
+        .map_err(|_| RunnerConfigError::InvalidConfigVersionFormat {
+            version: config_version.to_owned(),
+        })?;
+
+    for segment in segments {
+        if segment.parse::<u64>().is_err() {
+            return Err(RunnerConfigError::InvalidConfigVersionFormat {
+                version: config_version.to_owned(),
+            });
+        }
+    }
+
+    Ok(major)
 }

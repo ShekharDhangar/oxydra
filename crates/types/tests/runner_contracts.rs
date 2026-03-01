@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 
 use types::{
-    BootstrapEnvelopeError, ChannelsConfig, ExecCommand, RunnerBootstrapEnvelope,
-    RunnerConfigError, RunnerControl, RunnerControlError, RunnerControlErrorCode,
-    RunnerControlHealthStatus, RunnerControlResponse, RunnerControlShutdownStatus,
-    RunnerGlobalConfig, RunnerResolvedMountPaths, RunnerResourceLimits, RunnerRuntimePolicy,
-    RunnerUserConfig, RunnerUserRegistration, SandboxTier, SenderBinding, ShellDaemonRequest,
+    BootstrapEnvelopeError, ChannelsConfig, DEFAULT_RUNNER_CONFIG_VERSION, ExecCommand,
+    RunnerBootstrapEnvelope, RunnerConfigError, RunnerControl, RunnerControlError,
+    RunnerControlErrorCode, RunnerControlHealthStatus, RunnerControlResponse,
+    RunnerControlShutdownStatus, RunnerGlobalConfig, RunnerResolvedMountPaths,
+    RunnerResourceLimits, RunnerRuntimePolicy, RunnerUserConfig, RunnerUserRegistration,
+    SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION, SandboxTier, SenderBinding, ShellDaemonRequest,
     SidecarEndpoint, SidecarTransport, StartupDegradedReason, StartupDegradedReasonCode,
     StartupStatusReport, TelegramChannelConfig,
 };
@@ -40,6 +41,55 @@ fn runner_global_config_rejects_empty_user_config_path() {
         RunnerConfigError::InvalidUserConfigPath {
             user_id: "alice".to_owned(),
         }
+    );
+}
+
+#[test]
+fn runner_global_config_rejects_unsupported_config_major() {
+    let config = RunnerGlobalConfig {
+        config_version: "2.0.0".to_owned(),
+        ..RunnerGlobalConfig::default()
+    };
+
+    let error = config
+        .validate()
+        .expect_err("unsupported config version should fail validation");
+    assert_eq!(
+        error,
+        RunnerConfigError::UnsupportedConfigVersion {
+            version: "2.0.0".to_owned(),
+            supported_major: SUPPORTED_RUNNER_CONFIG_MAJOR_VERSION,
+        }
+    );
+}
+
+#[test]
+fn runner_user_config_rejects_invalid_config_version_format() {
+    let config = RunnerUserConfig {
+        config_version: "v1".to_owned(),
+        ..RunnerUserConfig::default()
+    };
+
+    let error = config
+        .validate()
+        .expect_err("invalid config version should fail validation");
+    assert_eq!(
+        error,
+        RunnerConfigError::InvalidConfigVersionFormat {
+            version: "v1".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn runner_config_defaults_to_current_version() {
+    assert_eq!(
+        RunnerGlobalConfig::default().config_version,
+        DEFAULT_RUNNER_CONFIG_VERSION
+    );
+    assert_eq!(
+        RunnerUserConfig::default().config_version,
+        DEFAULT_RUNNER_CONFIG_VERSION
     );
 }
 
