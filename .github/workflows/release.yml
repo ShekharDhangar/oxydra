@@ -361,6 +361,13 @@ jobs:
             mv changelog-truncated.txt changelog-context.txt
           fi
 
+          # Build the user prompt as a plain text file (avoids YAML indentation issues)
+          {
+            echo "Generate a changelog for changes between ${PREVIOUS_TAG:-initial release} and ${CURRENT_TAG}."
+            echo ""
+            cat changelog-context.txt
+          } > changelog-prompt.txt
+
           echo "Context file size: $(wc -c < changelog-context.txt) bytes"
 
       - name: Generate AI changelog
@@ -368,12 +375,11 @@ jobs:
         continue-on-error: true
         uses: actions/ai-inference@v1
         with:
-          prompt-file: '.github/prompts/changelog.prompt.yml'
-          input: |
-            previous_tag: ${{ steps.prev-release.outputs.previous_tag || 'initial release' }}
-            current_tag: ${{ env.RELEASE_TAG }}
-          file_input: |
-            commit_data: changelog-context.txt
+          model: openai/gpt-4o-mini
+          system-prompt-file: '.github/prompts/changelog-system.txt'
+          prompt-file: changelog-prompt.txt
+          max-completion-tokens: 2000
+          temperature: 0
 
       - name: Generate release summary
         run: |
