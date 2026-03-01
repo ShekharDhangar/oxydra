@@ -416,6 +416,7 @@ Runner configuration is separate from agent configuration and uses its own types
 
 ```rust
 pub struct RunnerGlobalConfig {
+    pub config_version: String,         // Current schema version (major must be 1)
     pub workspace_root: PathBuf,
     pub users: BTreeMap<String, UserRegistration>,
     pub default_tier: SandboxTier,
@@ -429,6 +430,7 @@ This file contains only infrastructure-uniform settings that cannot meaningfully
 
 ```rust
 pub struct RunnerUserConfig {
+    pub config_version: String,         // Current schema version (major must be 1)
     pub mounts: MountOverrides,
     pub resources: ResourceLimits,
     pub credentials: CredentialReferences,
@@ -438,6 +440,13 @@ pub struct RunnerUserConfig {
 ```
 
 Per-user files carry mount paths, resource limits, credential references, behavioral overrides, and external channel configuration used to launch that user's VM pair. The `channels` field configures external channel adapters (Telegram bot tokens, authorized senders) — see Chapter 12 for details.
+
+Both `runner.toml` and per-user runner config files are versioned and support automatic migration. The runner currently accepts major version `1` and runs registered version-to-version transforms when an older file version is detected.
+
+Versioning policy for runner config follows semantic versioning:
+- **Major**: breaking schema changes (renames, removals, type changes)
+- **Minor**: backward-compatible optional additions
+- **Patch**: non-breaking metadata/comment/default-only updates and no-op version bumps
 
 ## Config File Locations
 

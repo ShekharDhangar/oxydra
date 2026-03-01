@@ -13,8 +13,8 @@ use std::os::unix::fs::PermissionsExt;
 
 use tokio_tungstenite::tungstenite::{Message as WsMessage, accept};
 use types::{
-    RunnerBootstrapEnvelope, RunnerControl, RunnerControlErrorCode, RunnerControlResponse,
-    StartupDegradedReason, StartupDegradedReasonCode,
+    DEFAULT_RUNNER_CONFIG_VERSION, RunnerBootstrapEnvelope, RunnerControl, RunnerControlErrorCode,
+    RunnerControlResponse, StartupDegradedReason, StartupDegradedReasonCode,
 };
 
 use super::*;
@@ -135,6 +135,69 @@ fn global_and_user_configs_load_with_validation() {
     assert_eq!(global.workspace_root, "workspaces");
     assert_eq!(global.default_tier, SandboxTier::MicroVm);
     assert_eq!(user, RunnerUserConfig::default());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn loading_legacy_runner_global_config_auto_migrates_and_creates_backup() {
+    let root = temp_dir("global-config-migration");
+    let global_path = write_runner_config_fixture(&root, "container");
+
+    let config = load_runner_global_config(&global_path).expect("global config should load");
+    assert_eq!(config.config_version, DEFAULT_RUNNER_CONFIG_VERSION);
+
+    let migrated = fs::read_to_string(&global_path).expect("migrated config should be readable");
+    assert!(
+        migrated.contains(&format!(
+            "config_version = \"{DEFAULT_RUNNER_CONFIG_VERSION}\""
+        )),
+        "migrated config should include updated version"
+    );
+
+    let backup_count = fs::read_dir(&root)
+        .expect("root should be readable")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("runner.toml.bak.")
+        })
+        .count();
+    assert_eq!(backup_count, 1, "expected one backup file");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn loading_legacy_runner_user_config_auto_migrates_and_creates_backup() {
+    let root = temp_dir("user-config-migration");
+    let user_path = root.join("users/alice.toml");
+    write_user_config(&user_path, "");
+
+    let config = load_runner_user_config(&user_path).expect("user config should load");
+    assert_eq!(config.config_version, DEFAULT_RUNNER_CONFIG_VERSION);
+
+    let migrated = fs::read_to_string(&user_path).expect("migrated config should be readable");
+    assert!(
+        migrated.contains(&format!(
+            "config_version = \"{DEFAULT_RUNNER_CONFIG_VERSION}\""
+        )),
+        "migrated config should include updated version"
+    );
+
+    let backup_count = fs::read_dir(root.join("users"))
+        .expect("users directory should be readable")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("alice.toml.bak.")
+        })
+        .count();
+    assert_eq!(backup_count, 1, "expected one backup file");
 
     let _ = fs::remove_dir_all(root);
 }

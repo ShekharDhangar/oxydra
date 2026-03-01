@@ -5,6 +5,8 @@
 # For full documentation, see docs/guidebook/02-configuration-system.md
 #                                 and docs/guidebook/08-runner-and-guests.md
 
+config_version = "1.0.1"
+
 # Root directory under which per-user workspace directories are created.
 # Each user gets <workspace_root>/<user_id>/{shared,tmp,vault}.
 workspace_root = "workspaces"
