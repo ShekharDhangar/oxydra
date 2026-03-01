@@ -46,8 +46,10 @@ fn runner_global_config_rejects_empty_user_config_path() {
 
 #[test]
 fn runner_global_config_rejects_unsupported_config_major() {
-    let mut config = RunnerGlobalConfig::default();
-    config.config_version = "2.0.0".to_owned();
+    let config = RunnerGlobalConfig {
+        config_version: "2.0.0".to_owned(),
+        ..RunnerGlobalConfig::default()
+    };
 
     let error = config
         .validate()
@@ -63,8 +65,10 @@ fn runner_global_config_rejects_unsupported_config_major() {
 
 #[test]
 fn runner_user_config_rejects_invalid_config_version_format() {
-    let mut config = RunnerUserConfig::default();
-    config.config_version = "v1".to_owned();
+    let config = RunnerUserConfig {
+        config_version: "v1".to_owned(),
+        ..RunnerUserConfig::default()
+    };
 
     let error = config
         .validate()
