@@ -35,7 +35,12 @@ impl AgentRuntime {
             {
                 Ok(response) => return Ok(response),
                 Err(StreamCollectError::Cancelled) => return Err(RuntimeError::Cancelled),
-                Err(StreamCollectError::TurnTimedOut) => return Err(RuntimeError::BudgetExceeded),
+                Err(StreamCollectError::TurnTimedOut) => {
+                    return Err(Self::provider_timeout_error(
+                        request_context.provider.clone(),
+                        self.limits.turn_timeout,
+                    ));
+                }
                 Err(error) => {
                     tracing::debug!(?error, "streaming path failed; falling back to complete");
                 }
@@ -165,8 +170,18 @@ impl AgentRuntime {
             _ = cancellation.cancelled() => Err(RuntimeError::Cancelled),
             timed = tokio::time::timeout(self.limits.turn_timeout, provider.complete(context)) => match timed {
                 Ok(response) => response.map_err(RuntimeError::from),
-                Err(_) => Err(RuntimeError::BudgetExceeded),
+                Err(_) => Err(Self::provider_timeout_error(
+                    context.provider.clone(),
+                    self.limits.turn_timeout,
+                )),
             }
         }
+    }
+
+    fn provider_timeout_error(provider: ProviderId, timeout: std::time::Duration) -> RuntimeError {
+        RuntimeError::Provider(ProviderError::RequestFailed {
+            provider,
+            message: format!("provider response timed out after {timeout:?}"),
+        })
     }
 }

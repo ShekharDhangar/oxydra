@@ -1925,13 +1925,61 @@ async fn run_session_errors_when_provider_stage_times_out() {
             ..RuntimeLimits::default()
         },
     );
-    let mut context = test_context(provider_id, model_id);
+    let mut context = test_context(provider_id.clone(), model_id);
 
     let error = runtime
         .run_session(&mut context, &CancellationToken::new())
         .await
         .expect_err("provider call should be bounded by turn timeout");
-    assert!(matches!(error, types::RuntimeError::BudgetExceeded));
+    match error {
+        RuntimeError::Provider(ProviderError::RequestFailed { provider, message }) => {
+            assert_eq!(provider, provider_id);
+            assert!(message.contains("timed out"));
+        }
+        other => panic!("expected provider timeout error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn run_session_errors_when_stream_stage_times_out() {
+    let provider_id = ProviderId::from("openai");
+    let model_id = ModelId::from("gpt-4o-mini");
+    let mut provider = mock_provider(provider_id.clone(), model_id.clone(), true, true);
+    let stream_sender_hold = Arc::new(Mutex::new(
+        None::<mpsc::Sender<Result<StreamItem, ProviderError>>>,
+    ));
+    let stream_sender_hold_clone = Arc::clone(&stream_sender_hold);
+    provider.expect_stream().times(1).returning(move |_, _| {
+        let (sender, receiver) = mpsc::channel(1);
+        *stream_sender_hold_clone
+            .lock()
+            .expect("stream sender holder mutex should not be poisoned") = Some(sender);
+        Ok(receiver)
+    });
+    provider.expect_complete().never();
+    let runtime = AgentRuntime::new(
+        Box::new(provider),
+        ToolRegistry::default(),
+        RuntimeLimits {
+            turn_timeout: Duration::from_millis(10),
+            max_turns: 2,
+            max_cost: None,
+            ..RuntimeLimits::default()
+        },
+    );
+    let mut context = test_context(provider_id.clone(), model_id);
+
+    let error = runtime
+        .run_session(&mut context, &CancellationToken::new())
+        .await
+        .expect_err("stream receive should be bounded by turn timeout");
+    match error {
+        RuntimeError::Provider(ProviderError::RequestFailed { provider, message }) => {
+            assert_eq!(provider, provider_id);
+            assert!(message.contains("timed out"));
+        }
+        other => panic!("expected provider timeout error, got {other:?}"),
+    }
 }
 
 #[tokio::test]
