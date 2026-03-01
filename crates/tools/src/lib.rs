@@ -1,5 +1,6 @@
 use std::{
     env,
+    io,
     path::PathBuf,
     process::Command,
     sync::{
@@ -1000,7 +1001,11 @@ async fn connect_unix_sidecar_bash_tool(endpoint: SidecarEndpoint) -> (BashTool,
                 }
             },
             Err(error) => {
-                if Instant::now() < deadline {
+                let is_transient = matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                );
+                if is_transient && Instant::now() < deadline {
                     sleep(SIDECAR_CONNECT_RETRY_INTERVAL).await;
                     continue;
                 }

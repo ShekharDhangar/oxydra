@@ -258,6 +258,9 @@ impl CrateSandboxBackend {
         if let Err(error) =
             load_image_into_sandbox_vm(&request.guest_images.oxydra_vm, &vm_socket_str)
         {
+            if let Some(mut handle) = sidecar.take() {
+                let _ = handle.shutdown();
+            }
             cleanup_delete(sandbox_socket_path, vm_info.vm_name);
             return Err(error);
         }
@@ -271,6 +274,9 @@ impl CrateSandboxBackend {
         ) {
             Ok(runtime) => runtime,
             Err(error) => {
+                if let Some(mut handle) = sidecar.take() {
+                    let _ = handle.shutdown();
+                }
                 cleanup_delete(sandbox_socket_path, vm_info.vm_name);
                 return Err(error);
             }
@@ -334,13 +340,21 @@ impl CrateSandboxBackend {
             }
         }
 
-        let runtime = self.launch_docker_guest(
+        let runtime = match self.launch_docker_guest(
             &docker_endpoint,
             request,
             "container",
             RunnerGuestRole::OxydraVm,
             &request.guest_images.oxydra_vm,
-        )?;
+        ) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                if let Some(mut handle) = sidecar.take() {
+                    let _ = handle.shutdown();
+                }
+                return Err(error);
+            }
+        };
 
         let sidecar_endpoint = sidecar.as_ref().map(|_| SidecarEndpoint {
             transport: SidecarTransport::Unix,
