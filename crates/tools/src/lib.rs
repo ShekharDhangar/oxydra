@@ -31,6 +31,7 @@ use types::{
 mod registry;
 pub mod sandbox;
 
+pub mod attachment_tools;
 mod delegation_tools;
 pub mod media_tools;
 pub mod memory_tools;
@@ -43,6 +44,7 @@ mod tests;
 
 pub use delegation_tools::register_delegation_tools;
 
+pub use attachment_tools::{ATTACHMENT_SAVE_TOOL_NAME, register_attachment_tools};
 pub use media_tools::{SEND_MEDIA_TOOL_NAME, register_media_tools};
 pub use memory_tools::{
     MEMORY_DELETE_TOOL_NAME, MEMORY_SAVE_TOOL_NAME, MEMORY_SEARCH_TOOL_NAME,
