@@ -282,19 +282,25 @@ fn handle_check_update(include_prerelease: bool, config_path: &Path) -> Result<(
     if config_path.exists()
         && let Ok(runner) = Runner::from_global_config_path(config_path)
     {
-        let mismatches =
-            update_check::check_image_tag_mismatches(&runner.global_config().guest_images);
-        for m in &mismatches {
-            eprintln!(
-                "Warning: Binary version ({}) does not match guest image tag ({}) \
-                     in runner.toml field `{}` (image: {}).\n  \
-                     Update [guest_images] tags or re-run install-release.sh.",
-                m.binary_version, m.image_tag, m.field, m.image_ref,
-            );
-        }
+        emit_image_tag_mismatch_warnings(&runner);
     }
 
     Ok(())
+}
+
+fn format_image_tag_mismatch_warning(mismatch: &update_check::ImageTagMismatch) -> String {
+    format!(
+        "[oxydra] Warning: Binary version ({}) does not match guest image tag ({}) \
+             in runner.toml field `{}` (image: {}).\n\
+[oxydra]   Update [guest_images] tags in .oxydra/runner.toml or re-run install-release.sh.",
+        mismatch.binary_version, mismatch.image_tag, mismatch.field, mismatch.image_ref,
+    )
+}
+
+fn emit_image_tag_mismatch_warnings(runner: &Runner) {
+    for mismatch in update_check::check_image_tag_mismatches(&runner.global_config().guest_images) {
+        eprintln!("{}", format_image_tag_mismatch_warning(&mismatch));
+    }
 }
 
 fn resolve_user_id(user_id: Option<String>, runner: &Runner) -> Result<String, CliError> {
@@ -345,6 +351,8 @@ fn handle_lifecycle(action: LifecycleAction, args: &CliArgs) -> Result<(), CliEr
 }
 
 fn server_start(runner: &Runner, user_id: &str, args: &CliArgs) -> Result<(), CliError> {
+    emit_image_tag_mismatch_warnings(runner);
+
     // Non-blocking update notice: use cached result so startup is never delayed.
     // A separate thread performs the check to avoid blocking the main path.
     std::thread::spawn(|| {
@@ -1037,6 +1045,24 @@ mod tests {
         assert_eq!(args.command, Some(CliCommand::Start));
         assert_eq!(args.env_vars, vec!["MY_KEY=val"]);
         assert!(args.insecure);
+    }
+
+    #[test]
+    fn image_tag_mismatch_warning_mentions_fix_path() {
+        let warning = format_image_tag_mismatch_warning(&update_check::ImageTagMismatch {
+            field: "guest_images.oxydra_vm",
+            image_ref: "ghcr.io/shantanugoel/oxydra-vm:v0.1.4".to_owned(),
+            image_tag: "v0.1.4".to_owned(),
+            binary_version: "0.2.0".to_owned(),
+        });
+        assert!(
+            warning.contains("re-run install-release.sh"),
+            "warning should suggest reinstall path: {warning}"
+        );
+        assert!(
+            warning.contains(".oxydra/runner.toml"),
+            "warning should mention runner.toml path: {warning}"
+        );
     }
 
     #[test]

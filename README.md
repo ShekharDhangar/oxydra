@@ -86,7 +86,8 @@ Defaults:
 - Installs to `~/.local/bin`
 - Installs `runner`, `oxydra-vm`, `shell-daemon`, `oxydra-tui`
 - Copies example configs to `<base-dir>/.oxydra/agent.toml`, `<base-dir>/.oxydra/runner.toml`, and `<base-dir>/.oxydra/users/alice.toml`
-- Leaves existing config files unchanged (use `--overwrite-config` to replace)
+- On upgrades, verifies release checksum (`SHA256SUMS`), backs up existing binaries/config, and updates existing `runner.toml` `[guest_images]` tags to the installed release tag (without replacing other settings)
+- Leaves existing config files unchanged outside the targeted image-tag update (use `--overwrite-config` to replace templates)
 
 Useful variants:
 
@@ -102,6 +103,15 @@ curl -fsSL https://raw.githubusercontent.com/shantanugoel/oxydra/main/scripts/in
 
 # Install binaries only (skip config scaffolding)
 curl -fsSL https://raw.githubusercontent.com/shantanugoel/oxydra/main/scripts/install-release.sh | bash -s -- --tag "$OXYDRA_TAG" --skip-config
+
+# Non-interactive upgrade (auto-confirm prompts)
+curl -fsSL https://raw.githubusercontent.com/shantanugoel/oxydra/main/scripts/install-release.sh | bash -s -- --tag "$OXYDRA_TAG" --yes
+
+# Preview upgrade actions without changing anything
+curl -fsSL https://raw.githubusercontent.com/shantanugoel/oxydra/main/scripts/install-release.sh | bash -s -- --tag "$OXYDRA_TAG" --dry-run
+
+# Skip Docker pre-pull after install
+curl -fsSL https://raw.githubusercontent.com/shantanugoel/oxydra/main/scripts/install-release.sh | bash -s -- --tag "$OXYDRA_TAG" --no-pull
 ```
 
 #### Option B: manual install
@@ -142,7 +152,7 @@ If you used Option A above, the installer already created:
 - `.oxydra/runner.toml`
 - `.oxydra/users/alice.toml`
 
-Update `.oxydra/runner.toml` to match the release you installed:
+Verify `.oxydra/runner.toml` guest image tags match the release you installed:
 
 ```toml
 default_tier = "container"
