@@ -91,8 +91,11 @@ window.FormRenderer = (function () {
 
     // ── Error display ───────────────────────────────────────────
     var errorEl = el('p', 'fr-error');
+    var errorId = fieldId + '-error';
+    errorEl.id = errorId;
     errorEl.style.display = 'none';
     errorEl.setAttribute('role', 'alert');
+    errorEl.setAttribute('aria-live', 'assertive');
     container.appendChild(errorEl);
 
     return {

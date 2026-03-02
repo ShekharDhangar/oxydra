@@ -370,4 +370,198 @@ mod tests {
             "resolved catalog should have at least pinned snapshot providers"
         );
     }
+
+    #[test]
+    fn catalog_to_response_includes_all_model_fields() {
+        use std::collections::BTreeMap;
+        use types::{CatalogProvider, ModelDescriptor};
+
+        let mut models = BTreeMap::new();
+        models.insert(
+            "test-model".to_owned(),
+            ModelDescriptor {
+                id: "test-model".to_owned(),
+                name: "Test Model".to_owned(),
+                family: Some("test-family".to_owned()),
+                attachment: false,
+                reasoning: true,
+                tool_call: true,
+                interleaved: None,
+                structured_output: false,
+                temperature: true,
+                knowledge: None,
+                release_date: None,
+                last_updated: None,
+                modalities: types::Modalities {
+                    input: vec!["audio".to_owned(), "image".to_owned()],
+                    output: vec!["text".to_owned()],
+                },
+                open_weights: false,
+                cost: types::ModelCost {
+                    input: 1.0,
+                    output: 3.0,
+                    cache_read: Some(0.5),
+                    cache_write: Some(0.8),
+                },
+                limit: types::ModelLimits {
+                    context: 200000,
+                    output: 32768,
+                },
+            },
+        );
+
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "test-provider".to_owned(),
+            CatalogProvider {
+                id: "test-provider".to_owned(),
+                name: "Test Provider".to_owned(),
+                env: vec![],
+                api: None,
+                doc: None,
+                models,
+            },
+        );
+
+        let catalog = ModelCatalog::new(providers);
+        let response = catalog_to_response(&catalog);
+
+        let model = &response.providers[0].models[0];
+        assert_eq!(model.id, "test-model");
+        assert_eq!(model.name, "Test Model");
+        assert_eq!(model.family.as_deref(), Some("test-family"));
+        assert!(model.reasoning);
+        assert!(model.tool_call);
+        assert!(!model.attachment);
+        assert_eq!(model.modalities, vec!["audio", "image"]);
+        assert!((model.cost_input - 1.0).abs() < f64::EPSILON);
+        assert!((model.cost_output - 3.0).abs() < f64::EPSILON);
+        assert_eq!(model.context_window, 200000);
+        assert_eq!(model.max_output, 32768);
+    }
+
+    #[tokio::test]
+    async fn catalog_endpoint_returns_model_details() {
+        let state = test_state();
+        let app = crate::web::build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/catalog")
+                    .header("host", "127.0.0.1:9400")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        let providers = json["data"]["providers"].as_array().unwrap();
+        // At minimum, the pinned snapshot should have providers
+        assert!(
+            !providers.is_empty(),
+            "catalog should have at least one provider from pinned snapshot"
+        );
+
+        // Check that each provider has expected structure
+        for provider in providers {
+            assert!(provider["id"].is_string());
+            assert!(provider["name"].is_string());
+            assert!(provider["models"].is_array());
+
+            let models = provider["models"].as_array().unwrap();
+            for model in models {
+                assert!(model["id"].is_string(), "model should have id");
+                assert!(model["name"].is_string(), "model should have name");
+                assert!(
+                    model["context_window"].is_number(),
+                    "model should have context_window"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn catalog_status_has_nonzero_counts_from_pinned() {
+        let state = test_state();
+        let app = crate::web::build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/catalog/status")
+                    .header("host", "127.0.0.1:9400")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        let provider_count = json["data"]["provider_count"].as_u64().unwrap();
+        let model_count = json["data"]["model_count"].as_u64().unwrap();
+        assert!(
+            provider_count > 0,
+            "should have providers from pinned snapshot"
+        );
+        assert!(model_count > 0, "should have models from pinned snapshot");
+    }
+
+    #[test]
+    fn catalog_to_response_handles_empty_catalog() {
+        let catalog = ModelCatalog::default();
+        let response = catalog_to_response(&catalog);
+        assert!(response.providers.is_empty());
+    }
+
+    #[test]
+    fn catalog_to_response_handles_multiple_providers() {
+        use std::collections::BTreeMap;
+        use types::CatalogProvider;
+
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "alpha".to_owned(),
+            CatalogProvider {
+                id: "alpha".to_owned(),
+                name: "Alpha".to_owned(),
+                env: vec![],
+                api: None,
+                doc: None,
+                models: BTreeMap::new(),
+            },
+        );
+        providers.insert(
+            "beta".to_owned(),
+            CatalogProvider {
+                id: "beta".to_owned(),
+                name: "Beta".to_owned(),
+                env: vec![],
+                api: None,
+                doc: None,
+                models: BTreeMap::new(),
+            },
+        );
+
+        let catalog = ModelCatalog::new(providers);
+        let response = catalog_to_response(&catalog);
+        assert_eq!(response.providers.len(), 2);
+    }
+
+    #[test]
+    fn catalog_source_info_returns_string() {
+        let (source, _last_modified) = catalog_source_info();
+        assert!(!source.is_empty(), "source should be non-empty");
+    }
 }

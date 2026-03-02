@@ -149,6 +149,9 @@ window.CollectionEditor = (function () {
 
       // Header
       var header = el('div', 'ce-card-header');
+      header.setAttribute('role', 'button');
+      header.setAttribute('tabindex', '0');
+      header.setAttribute('aria-expanded', String(entry.expanded));
       var headerLeft = el('div', 'ce-card-header-left');
 
       var chevron = el('span', 'sr-chevron');
@@ -172,6 +175,7 @@ window.CollectionEditor = (function () {
       var deleteBtn = el('button', 'btn btn-danger btn-sm');
       deleteBtn.type = 'button';
       deleteBtn.textContent = 'Delete';
+      deleteBtn.setAttribute('aria-label', 'Delete ' + key);
       deleteBtn.addEventListener('click', function (e) {
         e.stopPropagation();
         if (!window.confirm('Delete "' + key + '"?')) return;
@@ -184,6 +188,17 @@ window.CollectionEditor = (function () {
         entry.expanded = !entry.expanded;
         body.style.display = entry.expanded ? '' : 'none';
         chevron.textContent = entry.expanded ? '▾' : '▸';
+        header.setAttribute('aria-expanded', String(entry.expanded));
+      });
+
+      header.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          entry.expanded = !entry.expanded;
+          body.style.display = entry.expanded ? '' : 'none';
+          chevron.textContent = entry.expanded ? '▾' : '▸';
+          header.setAttribute('aria-expanded', String(entry.expanded));
+        }
       });
 
       card.appendChild(header);

@@ -131,6 +131,8 @@ window.SectionRenderer = (function () {
 
     // ── Body ────────────────────────────────────────────────────
     var body = el('div', 'sr-body');
+    body.setAttribute('role', 'region');
+    body.setAttribute('aria-label', section.label + ' settings');
     var isExpanded = startExpanded;
     body.style.display = (isExpanded && sectionEnabled) ? '' : 'none';
 
@@ -140,6 +142,13 @@ window.SectionRenderer = (function () {
       body.style.display = (isExpanded && sectionEnabled) ? '' : 'none';
       chevron.textContent = isExpanded ? '▾' : '▸';
       header.setAttribute('aria-expanded', String(isExpanded));
+      // Move focus to first focusable element when expanding
+      if (isExpanded && sectionEnabled) {
+        var firstInput = body.querySelector('input, select, textarea, button, [tabindex]');
+        if (firstInput) {
+          setTimeout(function () { firstInput.focus(); }, 50);
+        }
+      }
     }
 
     header.addEventListener('click', toggleExpand);

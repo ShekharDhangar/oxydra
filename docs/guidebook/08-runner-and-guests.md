@@ -127,16 +127,53 @@ All endpoints use a JSON envelope (`{ data, meta }` or `{ error, meta }`). Key r
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/meta` | Server version, config path |
+| `GET` | `/api/v1/meta/schema` | Field metadata for all config types (labels, descriptions, input types, constraints, enum options, dynamic sources) |
+| `GET` | `/api/v1/catalog` | Resolved model catalog (cache → pinned snapshot) with provider/model data |
+| `GET` | `/api/v1/catalog/status` | Catalog source info: loaded file, last modified, provider/model counts |
+| `POST` | `/api/v1/catalog/refresh` | Trigger catalog fetch from models.dev or pinned URL |
 | `GET` | `/api/v1/status` | Aggregated daemon status for all users |
 | `GET` | `/api/v1/config/runner` | Runner config (masked) |
 | `PATCH` | `/api/v1/config/runner` | JSON merge patch on runner config |
+| `POST` | `/api/v1/config/runner/validate` | Validate runner config changes |
 | `GET` | `/api/v1/config/agent` | Agent config (masked) |
+| `GET` | `/api/v1/config/agent/effective` | Effective agent config after layered merging |
 | `PATCH` | `/api/v1/config/agent` | JSON merge patch on agent config |
+| `POST` | `/api/v1/config/agent/validate` | Validate agent config changes |
 | `GET/POST` | `/api/v1/config/users` | List / create users |
 | `GET/PATCH/DELETE` | `/api/v1/config/users/{id}` | Read / update / delete user |
+| `POST` | `/api/v1/config/users/{id}/validate` | Validate user config changes |
 | `POST` | `/api/v1/control/{id}/start\|stop\|restart` | Daemon lifecycle |
 | `GET` | `/api/v1/logs/{id}` | Log retrieval with filtering |
 | `GET` | `/api/v1/onboarding/status` | First-run setup detection |
+
+#### Schema Metadata (`/api/v1/meta/schema`)
+
+The schema metadata endpoint is the backend source of truth for the structured form UI. It returns purpose-built metadata (not JSON Schema) organized by config type (`agent`, `runner`, `user`) and section:
+
+- **Field metadata**: label, description, input type, default value, constraints (min/max/step), nullable flag, required flag, placeholder text
+- **Input types**: `text`, `number`, `boolean`, `secret`, `select`, `select_dynamic`, `model_picker`, `multiline`, `multi_select`, `tag_list`, `key_value_map`, `readonly`
+- **Dynamic sources**: runtime-resolved lists including registered providers (from effective layered config), canonical tool names (from the tool registry), timezone suggestions, and enum option sets for all typed enums (`ProviderType`, `SandboxTier`, `WebAuthMode`, `MemoryEmbeddingBackend`, `Model2vecModel`)
+- **Collection metadata**: identifies map-type and array-type dynamic collections (providers, agents, credential_refs, senders)
+- **Section organization**: group headers, optional section toggles, subsections (e.g., "Advanced Overrides" inside providers)
+
+This hybrid approach combines auto-derived metadata (defaults from Rust types, enum variants, tool names from the registry) with manually-authored UX metadata (labels, descriptions, input widget choices, visibility behavior).
+
+#### Model Catalog (`/api/v1/catalog`)
+
+The catalog endpoint returns the resolved model catalog for the model picker UI. It uses the same three-tier resolution as the runtime: cached catalog → workspace cache → compiled-in pinned snapshot. Each provider entry includes its models with UI-relevant fields: id, name, family, capability flags (reasoning, tool_call, attachment), input modalities, cost, and token limits.
+
+#### Structured Form UI
+
+The web configurator renders config editors as structured, section-based forms instead of generic text inputs:
+
+- **Every field** has a human-readable label, description/help text, and the appropriate input widget (dropdowns for enums, model picker for model selection, tag chips for lists, multi-select for tool allowlists, masked inputs for secrets)
+- **Dynamic collections** (providers, agents, credential refs, Telegram senders) use collapsible card-based collection editors with add/remove support
+- **Model selection** uses a searchable catalog-aware picker grouped by provider with capability badges
+- **Optional config sections** (tools.web_search, tools.shell, etc.) have enable/disable toggles that correctly map to merge-patch creation/removal semantics
+- **Catalog browsing** shows current catalog status (source, provider/model counts) with a refresh button
+- **Empty state**: when a config file doesn't exist, a banner indicates defaults are shown and the file will be created on first save
+- **Mobile navigation** uses a hamburger menu with a slide-out sidebar overlay
+- **Accessibility**: all form fields are properly labeled with `aria-describedby` linking to help text, keyboard navigation through all sections and inputs, `aria-expanded` on collapsible sections, and ARIA live regions for error messages
 
 The embedded SPA is served at `/` and uses Alpine.js with hash-based routing. No build toolchain is required — all frontend assets are compiled into the binary via `rust-embed`.
 

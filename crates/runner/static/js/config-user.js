@@ -90,6 +90,35 @@ window.UserConfigEditor = (function () {
     // Track the last rendered group for inserting group headers
     var lastGroup = null;
 
+    // ── Empty state banner ──────────────────────────────────────
+
+    if (opts.fileExists === false) {
+      var banner = el('div', 'sr-empty-state-banner');
+      banner.setAttribute('role', 'status');
+      var bannerIcon = el('span', 'sr-empty-state-icon');
+      bannerIcon.textContent = 'ℹ️';
+      var bannerText = el('div', 'sr-empty-state-text');
+      var bannerTitle = el('strong');
+      bannerTitle.textContent = 'No configuration file found';
+      var bannerDesc = el('p');
+      bannerDesc.textContent = 'The user config file does not exist yet. ' +
+        'All fields below show their default values. ' +
+        'Edit and save to create the file.';
+      if (opts.filePath) {
+        var bannerPath = el('p', 'sr-empty-state-path');
+        bannerPath.textContent = 'File will be created at: ' + opts.filePath;
+        bannerText.appendChild(bannerTitle);
+        bannerText.appendChild(bannerDesc);
+        bannerText.appendChild(bannerPath);
+      } else {
+        bannerText.appendChild(bannerTitle);
+        bannerText.appendChild(bannerDesc);
+      }
+      banner.appendChild(bannerIcon);
+      banner.appendChild(bannerText);
+      container.appendChild(banner);
+    }
+
     // ── Insert group header if needed ───────────────────────────
 
     function insertGroupHeader(parent, sectionSchema) {

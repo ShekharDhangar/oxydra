@@ -25,6 +25,7 @@ The catalog evolves from a lightweight pinned list into a fully typed schema wit
 2. **Versioned artifacts** — generated snapshots are committed into the repository with a version stamp, not auto-applied
 3. **Validation at startup** — runtime rejects unknown or invalid model metadata during config validation; unrecognized model IDs in configuration fail fast
 4. **No self-mutation** — the runtime/LLM process cannot modify catalog files in-place; catalog updates are always operator-driven
+5. **Web catalog API** — the web configurator exposes `GET /api/v1/catalog` (browsable model data), `GET /api/v1/catalog/status` (source info), and `POST /api/v1/catalog/refresh` (trigger fetch). The model picker UI uses the catalog for searchable, provider-grouped model selection with capability badges.
 
 ### Schema
 

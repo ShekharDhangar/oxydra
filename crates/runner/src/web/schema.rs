@@ -1671,48 +1671,79 @@ mod tests {
         ))
     }
 
+    // ── Section presence tests ──────────────────────────────────
+
     #[test]
     fn agent_schema_has_all_sections() {
         let schema = build_agent_schema();
         let section_ids: Vec<&str> = schema.sections.iter().map(|s| s.id.as_str()).collect();
-        assert!(section_ids.contains(&"general"));
-        assert!(section_ids.contains(&"selection"));
-        assert!(section_ids.contains(&"runtime"));
-        assert!(section_ids.contains(&"runtime.context_budget"));
-        assert!(section_ids.contains(&"runtime.summarization"));
-        assert!(section_ids.contains(&"memory"));
-        assert!(section_ids.contains(&"memory.retrieval"));
-        assert!(section_ids.contains(&"providers"));
-        assert!(section_ids.contains(&"reliability"));
-        assert!(section_ids.contains(&"catalog"));
-        assert!(section_ids.contains(&"tools.web_search"));
-        assert!(section_ids.contains(&"tools.shell"));
-        assert!(section_ids.contains(&"tools.attachment_save"));
-        assert!(section_ids.contains(&"scheduler"));
-        assert!(section_ids.contains(&"gateway"));
-        assert!(section_ids.contains(&"agents"));
+        let expected = [
+            "general",
+            "selection",
+            "runtime",
+            "runtime.context_budget",
+            "runtime.summarization",
+            "memory",
+            "memory.retrieval",
+            "providers",
+            "reliability",
+            "catalog",
+            "tools.web_search",
+            "tools.shell",
+            "tools.attachment_save",
+            "scheduler",
+            "gateway",
+            "agents",
+        ];
+        for id in &expected {
+            assert!(
+                section_ids.contains(id),
+                "agent schema missing section '{id}'"
+            );
+        }
+        assert_eq!(
+            section_ids.len(),
+            expected.len(),
+            "agent schema has unexpected extra sections: {section_ids:?}"
+        );
     }
 
     #[test]
     fn runner_schema_has_all_sections() {
         let schema = build_runner_schema();
         let section_ids: Vec<&str> = schema.sections.iter().map(|s| s.id.as_str()).collect();
-        assert!(section_ids.contains(&"general"));
-        assert!(section_ids.contains(&"guest_images"));
-        assert!(section_ids.contains(&"web"));
+        let expected = ["general", "guest_images", "web"];
+        for id in &expected {
+            assert!(
+                section_ids.contains(id),
+                "runner schema missing section '{id}'"
+            );
+        }
+        assert_eq!(section_ids.len(), expected.len());
     }
 
     #[test]
     fn user_schema_has_all_sections() {
         let schema = build_user_schema();
         let section_ids: Vec<&str> = schema.sections.iter().map(|s| s.id.as_str()).collect();
-        assert!(section_ids.contains(&"general"));
-        assert!(section_ids.contains(&"mounts"));
-        assert!(section_ids.contains(&"resources"));
-        assert!(section_ids.contains(&"credential_refs"));
-        assert!(section_ids.contains(&"behavior"));
-        assert!(section_ids.contains(&"channels.telegram"));
+        let expected = [
+            "general",
+            "mounts",
+            "resources",
+            "credential_refs",
+            "behavior",
+            "channels.telegram",
+        ];
+        for id in &expected {
+            assert!(
+                section_ids.contains(id),
+                "user schema missing section '{id}'"
+            );
+        }
+        assert_eq!(section_ids.len(), expected.len());
     }
+
+    // ── Dynamic sources tests ────────────────────────────────────
 
     #[test]
     fn dynamic_sources_include_tool_names() {
@@ -1724,6 +1755,20 @@ mod tests {
         assert!(sources.tool_names.contains(&"shell_exec".to_owned()));
         assert!(sources.tool_names.contains(&"web_search".to_owned()));
         assert!(sources.tool_names.contains(&"delegate_to_agent".to_owned()));
+    }
+
+    #[test]
+    fn dynamic_sources_tool_names_match_canonical() {
+        let state = test_state();
+        let sources = build_dynamic_sources(&state);
+        let canonical: Vec<String> = tools::canonical_tool_names()
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(
+            sources.tool_names, canonical,
+            "dynamic sources tool_names should exactly match tools::canonical_tool_names()"
+        );
     }
 
     #[test]
@@ -1753,6 +1798,8 @@ mod tests {
         assert!(!sources.timezone_suggestions.is_empty());
     }
 
+    // ── Enum parity tests ────────────────────────────────────────
+
     #[test]
     fn provider_types_match_rust_enum() {
         let state = test_state();
@@ -1767,6 +1814,18 @@ mod tests {
         assert!(values.contains(&"gemini"));
         assert!(values.contains(&"openai_responses"));
         assert_eq!(values.len(), 4, "should match the 4 ProviderType variants");
+
+        // Verify each value round-trips through serde deserialization.
+        for v in &values {
+            let json = format!("\"{v}\"");
+            let parsed: types::ProviderType = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("provider_type '{v}' should deserialize: {e}"));
+            let serialized = serde_json::to_string(&parsed).unwrap();
+            assert_eq!(
+                serialized, json,
+                "provider_type '{v}' should round-trip through serde"
+            );
+        }
     }
 
     #[test]
@@ -1782,7 +1841,243 @@ mod tests {
         assert!(values.contains(&"container"));
         assert!(values.contains(&"process"));
         assert_eq!(values.len(), 3, "should match the 3 SandboxTier variants");
+
+        // Verify round-trip through serde.
+        for v in &values {
+            let json = format!("\"{v}\"");
+            let parsed: types::SandboxTier = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("sandbox_tier '{v}' should deserialize: {e}"));
+            let serialized = serde_json::to_string(&parsed).unwrap();
+            assert_eq!(serialized, json);
+        }
     }
+
+    #[test]
+    fn auth_modes_match_rust_enum() {
+        let state = test_state();
+        let sources = build_dynamic_sources(&state);
+        let values: Vec<&str> = sources
+            .auth_modes
+            .iter()
+            .map(|o| o.value.as_str())
+            .collect();
+        assert!(values.contains(&"disabled"));
+        assert!(values.contains(&"token"));
+        assert_eq!(values.len(), 2, "should match the 2 WebAuthMode variants");
+
+        for v in &values {
+            let json = format!("\"{v}\"");
+            let parsed: types::WebAuthMode = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("auth_mode '{v}' should deserialize: {e}"));
+            let serialized = serde_json::to_string(&parsed).unwrap();
+            assert_eq!(serialized, json);
+        }
+    }
+
+    #[test]
+    fn embedding_backends_match_rust_enum() {
+        let state = test_state();
+        let sources = build_dynamic_sources(&state);
+        let values: Vec<&str> = sources
+            .embedding_backends
+            .iter()
+            .map(|o| o.value.as_str())
+            .collect();
+        assert!(values.contains(&"model2vec"));
+        assert!(values.contains(&"deterministic"));
+        assert_eq!(
+            values.len(),
+            2,
+            "should match the 2 MemoryEmbeddingBackend variants"
+        );
+
+        for v in &values {
+            let json = format!("\"{v}\"");
+            let parsed: types::MemoryEmbeddingBackend = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("embedding_backend '{v}' should deserialize: {e}"));
+            let serialized = serde_json::to_string(&parsed).unwrap();
+            assert_eq!(serialized, json);
+        }
+    }
+
+    #[test]
+    fn model2vec_models_match_rust_enum() {
+        let state = test_state();
+        let sources = build_dynamic_sources(&state);
+        let values: Vec<&str> = sources
+            .model2vec_models
+            .iter()
+            .map(|o| o.value.as_str())
+            .collect();
+        assert!(values.contains(&"potion_8m"));
+        assert!(values.contains(&"potion_32m"));
+        assert_eq!(
+            values.len(),
+            2,
+            "should match the 2 Model2vecModel variants"
+        );
+
+        for v in &values {
+            let json = format!("\"{v}\"");
+            let parsed: types::Model2vecModel = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("model2vec_model '{v}' should deserialize: {e}"));
+            let serialized = serde_json::to_string(&parsed).unwrap();
+            assert_eq!(serialized, json);
+        }
+    }
+
+    // ── Field-path coverage tests ────────────────────────────────
+
+    /// Collect all field paths from a schema, recursively including subsections.
+    fn collect_field_paths(schema: &ConfigSchema) -> Vec<String> {
+        let mut paths = Vec::new();
+        for section in &schema.sections {
+            collect_section_field_paths(section, &mut paths);
+        }
+        paths
+    }
+
+    fn collect_section_field_paths(section: &SchemaSection, paths: &mut Vec<String>) {
+        for field in &section.fields {
+            paths.push(field.path.clone());
+        }
+        for sub in &section.subsections {
+            collect_section_field_paths(sub, paths);
+        }
+        // Collection key fields
+        if let Some(ref col) = section.collection {
+            if let Some(ref key_field) = col.key_field {
+                paths.push(key_field.path.clone());
+            }
+        }
+    }
+
+    #[test]
+    fn agent_schema_covers_all_agent_config_field_paths() {
+        let paths = collect_field_paths(&build_agent_schema());
+
+        // General
+        assert!(paths.contains(&"config_version".to_owned()));
+        // Selection
+        assert!(paths.contains(&"selection.provider".to_owned()));
+        assert!(paths.contains(&"selection.model".to_owned()));
+        // Runtime
+        assert!(paths.contains(&"runtime.turn_timeout_secs".to_owned()));
+        assert!(paths.contains(&"runtime.max_turns".to_owned()));
+        assert!(paths.contains(&"runtime.max_cost".to_owned()));
+        // Context budget
+        assert!(paths.contains(&"runtime.context_budget.trigger_ratio".to_owned()));
+        assert!(paths.contains(&"runtime.context_budget.safety_buffer_tokens".to_owned()));
+        assert!(paths.contains(&"runtime.context_budget.fallback_max_context_tokens".to_owned()));
+        // Summarization
+        assert!(paths.contains(&"runtime.summarization.target_ratio".to_owned()));
+        assert!(paths.contains(&"runtime.summarization.min_turns".to_owned()));
+        // Memory
+        assert!(paths.contains(&"memory.enabled".to_owned()));
+        assert!(paths.contains(&"memory.remote_url".to_owned()));
+        assert!(paths.contains(&"memory.auth_token".to_owned()));
+        assert!(paths.contains(&"memory.embedding_backend".to_owned()));
+        assert!(paths.contains(&"memory.model2vec_model".to_owned()));
+        // Memory retrieval
+        assert!(paths.contains(&"memory.retrieval.top_k".to_owned()));
+        assert!(paths.contains(&"memory.retrieval.vector_weight".to_owned()));
+        assert!(paths.contains(&"memory.retrieval.fts_weight".to_owned()));
+        // Providers (entry-level fields)
+        assert!(paths.contains(&"provider_type".to_owned()));
+        assert!(paths.contains(&"base_url".to_owned()));
+        assert!(paths.contains(&"api_key".to_owned()));
+        assert!(paths.contains(&"api_key_env".to_owned()));
+        assert!(paths.contains(&"extra_headers".to_owned()));
+        assert!(paths.contains(&"catalog_provider".to_owned()));
+        // Providers advanced overrides
+        assert!(paths.contains(&"attachment".to_owned()));
+        assert!(paths.contains(&"input_modalities".to_owned()));
+        assert!(paths.contains(&"reasoning".to_owned()));
+        assert!(paths.contains(&"max_input_tokens".to_owned()));
+        assert!(paths.contains(&"max_output_tokens".to_owned()));
+        assert!(paths.contains(&"max_context_tokens".to_owned()));
+        // Reliability
+        assert!(paths.contains(&"reliability.max_attempts".to_owned()));
+        assert!(paths.contains(&"reliability.backoff_base_ms".to_owned()));
+        assert!(paths.contains(&"reliability.backoff_max_ms".to_owned()));
+        assert!(paths.contains(&"reliability.jitter".to_owned()));
+        // Catalog
+        assert!(paths.contains(&"catalog.skip_catalog_validation".to_owned()));
+        assert!(paths.contains(&"catalog.pinned_url".to_owned()));
+        // Tools — web search
+        assert!(paths.contains(&"tools.web_search.provider".to_owned()));
+        assert!(paths.contains(&"tools.web_search.base_url".to_owned()));
+        assert!(paths.contains(&"tools.web_search.egress_allowlist".to_owned()));
+        // Tools — shell
+        assert!(paths.contains(&"tools.shell.allow".to_owned()));
+        assert!(paths.contains(&"tools.shell.deny".to_owned()));
+        assert!(paths.contains(&"tools.shell.replace_defaults".to_owned()));
+        assert!(paths.contains(&"tools.shell.allow_operators".to_owned()));
+        assert!(paths.contains(&"tools.shell.env_keys".to_owned()));
+        // Tools — attachment_save
+        assert!(paths.contains(&"tools.attachment_save.timeout_secs".to_owned()));
+        // Scheduler
+        assert!(paths.contains(&"scheduler.enabled".to_owned()));
+        assert!(paths.contains(&"scheduler.poll_interval_secs".to_owned()));
+        assert!(paths.contains(&"scheduler.max_concurrent".to_owned()));
+        assert!(paths.contains(&"scheduler.default_timezone".to_owned()));
+        assert!(paths.contains(&"scheduler.auto_disable_after_failures".to_owned()));
+        assert!(paths.contains(&"scheduler.notify_after_failures".to_owned()));
+        // Gateway
+        assert!(paths.contains(&"gateway.max_sessions_per_user".to_owned()));
+        assert!(paths.contains(&"gateway.max_concurrent_turns_per_user".to_owned()));
+        assert!(paths.contains(&"gateway.session_idle_ttl_hours".to_owned()));
+        // Agent definitions (entry-level fields)
+        assert!(paths.contains(&"system_prompt".to_owned()));
+        assert!(paths.contains(&"system_prompt_file".to_owned()));
+        assert!(paths.contains(&"tools".to_owned()));
+    }
+
+    #[test]
+    fn runner_schema_covers_all_runner_config_field_paths() {
+        let paths = collect_field_paths(&build_runner_schema());
+
+        assert!(paths.contains(&"config_version".to_owned()));
+        assert!(paths.contains(&"workspace_root".to_owned()));
+        assert!(paths.contains(&"default_tier".to_owned()));
+        assert!(paths.contains(&"guest_images.oxydra_vm".to_owned()));
+        assert!(paths.contains(&"guest_images.shell_vm".to_owned()));
+        assert!(paths.contains(&"guest_images.firecracker_oxydra_vm_config".to_owned()));
+        assert!(paths.contains(&"guest_images.firecracker_shell_vm_config".to_owned()));
+        assert!(paths.contains(&"web.enabled".to_owned()));
+        assert!(paths.contains(&"web.bind".to_owned()));
+        assert!(paths.contains(&"web.auth_mode".to_owned()));
+        assert!(paths.contains(&"web.auth_token_env".to_owned()));
+        assert!(paths.contains(&"web.auth_token".to_owned()));
+    }
+
+    #[test]
+    fn user_schema_covers_all_user_config_field_paths() {
+        let paths = collect_field_paths(&build_user_schema());
+
+        assert!(paths.contains(&"config_version".to_owned()));
+        assert!(paths.contains(&"mounts.shared".to_owned()));
+        assert!(paths.contains(&"mounts.tmp".to_owned()));
+        assert!(paths.contains(&"mounts.vault".to_owned()));
+        assert!(paths.contains(&"resources.max_vcpus".to_owned()));
+        assert!(paths.contains(&"resources.max_memory_mib".to_owned()));
+        assert!(paths.contains(&"resources.max_processes".to_owned()));
+        // Credential refs (key/value)
+        assert!(paths.contains(&"_key".to_owned()));
+        assert!(paths.contains(&"_value".to_owned()));
+        // Behavior
+        assert!(paths.contains(&"behavior.sandbox_tier".to_owned()));
+        assert!(paths.contains(&"behavior.shell_enabled".to_owned()));
+        assert!(paths.contains(&"behavior.browser_enabled".to_owned()));
+        // Telegram
+        assert!(paths.contains(&"channels.telegram.enabled".to_owned()));
+        assert!(paths.contains(&"channels.telegram.bot_token_env".to_owned()));
+        assert!(paths.contains(&"channels.telegram.polling_timeout_secs".to_owned()));
+        assert!(paths.contains(&"channels.telegram.max_message_length".to_owned()));
+        assert!(paths.contains(&"channels.telegram.senders".to_owned()));
+    }
+
+    // ── Nullable metadata tests ──────────────────────────────────
 
     #[test]
     fn optional_sections_marked_correctly() {
@@ -1801,8 +2096,24 @@ mod tests {
             .unwrap();
         assert!(shell.optional_section);
 
+        let attachment_save = schema
+            .sections
+            .iter()
+            .find(|s| s.id == "tools.attachment_save")
+            .unwrap();
+        assert!(attachment_save.optional_section);
+
         let runtime = schema.sections.iter().find(|s| s.id == "runtime").unwrap();
         assert!(!runtime.optional_section);
+
+        // User telegram section is optional
+        let user_schema = build_user_schema();
+        let telegram = user_schema
+            .sections
+            .iter()
+            .find(|s| s.id == "channels.telegram")
+            .unwrap();
+        assert!(telegram.optional_section);
     }
 
     #[test]
@@ -1819,6 +2130,16 @@ mod tests {
 
         let agents = schema.sections.iter().find(|s| s.id == "agents").unwrap();
         let collection = agents.collection.as_ref().unwrap();
+        assert_eq!(collection.kind, "map");
+
+        // User credential_refs are also a map collection
+        let user_schema = build_user_schema();
+        let creds = user_schema
+            .sections
+            .iter()
+            .find(|s| s.id == "credential_refs")
+            .unwrap();
+        let collection = creds.collection.as_ref().unwrap();
         assert_eq!(collection.kind, "map");
     }
 
@@ -1846,7 +2167,228 @@ mod tests {
             remote_url.nullable,
             "remote_url should be nullable (Option<String>)"
         );
+
+        let auth_token = memory
+            .fields
+            .iter()
+            .find(|f| f.path == "memory.auth_token")
+            .unwrap();
+        assert!(
+            auth_token.nullable,
+            "auth_token should be nullable (Option<String>)"
+        );
     }
+
+    #[test]
+    fn nullable_fields_in_providers_advanced_overrides() {
+        let schema = build_agent_schema();
+        let providers = schema
+            .sections
+            .iter()
+            .find(|s| s.id == "providers")
+            .unwrap();
+        let advanced = providers
+            .subsections
+            .iter()
+            .find(|s| s.id == "providers.advanced")
+            .unwrap();
+
+        for field in &advanced.fields {
+            assert!(
+                field.nullable,
+                "provider advanced override field '{}' should be nullable",
+                field.path
+            );
+        }
+    }
+
+    #[test]
+    fn nullable_fields_in_user_resources() {
+        let schema = build_user_schema();
+        let resources = schema
+            .sections
+            .iter()
+            .find(|s| s.id == "resources")
+            .unwrap();
+
+        for field in &resources.fields {
+            assert!(
+                field.nullable,
+                "user resource field '{}' should be nullable",
+                field.path
+            );
+        }
+    }
+
+    #[test]
+    fn nullable_fields_in_user_behavior() {
+        let schema = build_user_schema();
+        let behavior = schema.sections.iter().find(|s| s.id == "behavior").unwrap();
+
+        for field in &behavior.fields {
+            assert!(
+                field.nullable,
+                "user behavior field '{}' should be nullable",
+                field.path
+            );
+        }
+    }
+
+    #[test]
+    fn nullable_fields_in_runner_guest_images() {
+        let schema = build_runner_schema();
+        let guest_images = schema
+            .sections
+            .iter()
+            .find(|s| s.id == "guest_images")
+            .unwrap();
+
+        // Firecracker config paths should be nullable.
+        let fc_oxydra = guest_images
+            .fields
+            .iter()
+            .find(|f| f.path == "guest_images.firecracker_oxydra_vm_config")
+            .unwrap();
+        assert!(fc_oxydra.nullable);
+
+        let fc_shell = guest_images
+            .fields
+            .iter()
+            .find(|f| f.path == "guest_images.firecracker_shell_vm_config")
+            .unwrap();
+        assert!(fc_shell.nullable);
+    }
+
+    // ── Field metadata quality tests ─────────────────────────────
+
+    #[test]
+    fn all_fields_have_labels_and_descriptions() {
+        let state = test_state();
+        let sources = build_dynamic_sources(&state);
+        let response = ConfigSchemaResponse {
+            agent: build_agent_schema(),
+            runner: build_runner_schema(),
+            user: build_user_schema(),
+            dynamic_sources: sources,
+        };
+
+        fn check_section_fields(section: &SchemaSection, config_type: &str) {
+            for field in &section.fields {
+                assert!(
+                    !field.label.is_empty(),
+                    "{config_type} field '{}' has empty label",
+                    field.path
+                );
+                assert!(
+                    field.description.is_some(),
+                    "{config_type} field '{}' has no description",
+                    field.path
+                );
+            }
+            for sub in &section.subsections {
+                check_section_fields(sub, config_type);
+            }
+        }
+
+        for section in &response.agent.sections {
+            check_section_fields(section, "agent");
+        }
+        for section in &response.runner.sections {
+            check_section_fields(section, "runner");
+        }
+        for section in &response.user.sections {
+            check_section_fields(section, "user");
+        }
+    }
+
+    #[test]
+    fn select_fields_have_enum_options_or_dynamic_source() {
+        fn check_section(section: &SchemaSection) {
+            for field in &section.fields {
+                if field.input_type == "select" {
+                    assert!(
+                        field.enum_options.is_some()
+                            && !field.enum_options.as_ref().unwrap().is_empty(),
+                        "select field '{}' should have non-empty enum_options",
+                        field.path
+                    );
+                }
+                if field.input_type == "select_dynamic" {
+                    assert!(
+                        field.dynamic_source.is_some(),
+                        "select_dynamic field '{}' should have a dynamic_source",
+                        field.path
+                    );
+                }
+            }
+            for sub in &section.subsections {
+                check_section(sub);
+            }
+        }
+
+        for section in &build_agent_schema().sections {
+            check_section(section);
+        }
+        for section in &build_runner_schema().sections {
+            check_section(section);
+        }
+        for section in &build_user_schema().sections {
+            check_section(section);
+        }
+    }
+
+    #[test]
+    fn number_fields_with_constraints_have_valid_ranges() {
+        fn check_section(section: &SchemaSection) {
+            for field in &section.fields {
+                if field.input_type == "number" {
+                    if let Some(ref c) = field.constraints {
+                        if let (Some(min), Some(max)) = (c.min, c.max) {
+                            assert!(
+                                min <= max,
+                                "field '{}' has min ({}) > max ({})",
+                                field.path,
+                                min,
+                                max
+                            );
+                        }
+                    }
+                }
+            }
+            for sub in &section.subsections {
+                check_section(sub);
+            }
+        }
+
+        for section in &build_agent_schema().sections {
+            check_section(section);
+        }
+        for section in &build_runner_schema().sections {
+            check_section(section);
+        }
+        for section in &build_user_schema().sections {
+            check_section(section);
+        }
+    }
+
+    // ── Group organization tests ─────────────────────────────────
+
+    #[test]
+    fn agent_sections_have_group_assignments() {
+        let schema = build_agent_schema();
+        // All non-general sections should have a group.
+        for section in &schema.sections {
+            if section.id != "general" {
+                assert!(
+                    section.group.is_some(),
+                    "agent section '{}' should have a group assignment",
+                    section.id
+                );
+            }
+        }
+    }
+
+    // ── Serialization tests ──────────────────────────────────────
 
     #[test]
     fn schema_serializes_to_json_without_error() {
@@ -1864,6 +2406,28 @@ mod tests {
         let _parsed: serde_json::Value =
             serde_json::from_str(&json).expect("serialized schema should be valid JSON");
     }
+
+    #[test]
+    fn schema_omits_empty_optional_fields() {
+        // Verify skip_serializing_if works: a standard non-nullable field should
+        // not serialize the `nullable` key when it is false.
+        let field = fld("test", "Test", "text");
+        let json = serde_json::to_value(&field).unwrap();
+        assert!(
+            json.get("nullable").is_none(),
+            "nullable=false should be omitted via skip_serializing_if"
+        );
+        assert!(
+            json.get("required").is_none(),
+            "required=false should be omitted via skip_serializing_if"
+        );
+        assert!(
+            json.get("allow_custom").is_none(),
+            "allow_custom=false should be omitted via skip_serializing_if"
+        );
+    }
+
+    // ── HTTP endpoint tests ──────────────────────────────────────
 
     #[tokio::test]
     async fn schema_endpoint_returns_all_config_types() {
@@ -1891,5 +2455,57 @@ mod tests {
         assert!(json["data"]["user"]["sections"].is_array());
         assert!(json["data"]["dynamic_sources"]["tool_names"].is_array());
         assert!(json["data"]["dynamic_sources"]["registered_providers"].is_array());
+    }
+
+    #[tokio::test]
+    async fn schema_endpoint_returns_correct_field_metadata() {
+        let state = test_state();
+        let app = crate::web::build_router(state);
+
+        let response = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/v1/meta/schema")
+                    .header("host", "127.0.0.1:9400")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        // Verify the selection section has model_picker input type
+        let agent_sections = json["data"]["agent"]["sections"].as_array().unwrap();
+        let selection = agent_sections
+            .iter()
+            .find(|s| s["id"] == "selection")
+            .expect("selection section should exist");
+        let model_field = selection["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["path"] == "selection.model")
+            .expect("selection.model field should exist");
+        assert_eq!(model_field["input_type"], "model_picker");
+        assert_eq!(model_field["required"], true);
+        assert_eq!(model_field["allow_custom"], true);
+
+        // Verify dynamic sources contain all expected keys
+        let ds = &json["data"]["dynamic_sources"];
+        assert!(ds["tool_names"].is_array());
+        assert!(ds["provider_types"].is_array());
+        assert!(ds["sandbox_tiers"].is_array());
+        assert!(ds["auth_modes"].is_array());
+        assert!(ds["embedding_backends"].is_array());
+        assert!(ds["model2vec_models"].is_array());
+        assert!(ds["web_search_providers"].is_array());
+        assert!(ds["input_modalities"].is_array());
+        assert!(ds["safesearch_levels"].is_array());
+        assert!(ds["timezone_suggestions"].is_array());
     }
 }

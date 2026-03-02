@@ -1246,6 +1246,43 @@ select.text-input:focus {
   margin-top: 0;
 }
 
+/* Empty state banner for missing config files */
+.sr-empty-state-banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  border: 1px solid #bcd4e6;
+  border-radius: 8px;
+  background: #eef5fb;
+  color: #1a3a5c;
+}
+
+.sr-empty-state-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sr-empty-state-text strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.95rem;
+}
+
+.sr-empty-state-text p {
+  margin: 0 0 4px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.sr-empty-state-path {
+  font-family: monospace;
+  font-size: 0.82rem;
+  color: #4a6a8a;
+}
+
 .sr-group-title {
   display: block;
   font-weight: 700;
