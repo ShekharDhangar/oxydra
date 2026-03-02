@@ -1554,3 +1554,22 @@ select.text-input:focus {
   font-size: 0.9rem;
   color: var(--text-muted);
 }
+
+/* ── User Config: Sender Bindings ──────────────────────────── */
+
+.user-senders-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e8ecf2;
+}
+
+.user-senders-header {
+  margin: 0 0 4px 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.user-senders-entries {
+  margin-bottom: 12px;
+}

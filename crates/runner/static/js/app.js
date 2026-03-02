@@ -240,6 +240,8 @@ function app() {
     agentStructuredEditor: null,
     agentConfigRaw: null,
     userEditor: null,
+    userStructuredEditor: null,
+    userConfigRaw: null,
     selectedUserId: '',
     restartNotice: '',
     schemaCache: null,
@@ -482,8 +484,33 @@ function app() {
     async loadUserConfig(userId) {
       this.selectedUserId = userId;
       const encodedUser = encodeURIComponent(userId);
-      const response = await api(`/config/users/${encodedUser}`);
+
+      // Load schema and config in parallel
+      const [schemaData, response] = await Promise.all([
+        this.loadSchema(),
+        api(`/config/users/${encodedUser}`),
+      ]);
+
+      // Store raw response for save flow
+      this.userConfigRaw = response;
+
+      // Keep the old editor for backward compat of save flow
       this.userEditor = createEditor(response, `/config/users/${encodedUser}`);
+
+      // Render the structured editor
+      await this.$nextTick();
+      const container = document.getElementById('user-structured-editor');
+      if (container && schemaData && window.UserConfigEditor) {
+        const self = this;
+        this.userStructuredEditor = window.UserConfigEditor.render(container, {
+          schema: schemaData.user,
+          config: response.config,
+          dynamicSources: schemaData.dynamic_sources,
+          fileExists: response.file_exists,
+          filePath: response.file_path,
+          showToast: (msg, kind) => self.showToast(msg, kind),
+        });
+      }
     },
 
     findUserStatus(userId) {
@@ -917,12 +944,74 @@ function app() {
     },
 
     async saveUserConfig() {
-      if (!this.selectedUserId) {
+      if (!this.selectedUserId || this.saving) {
         return;
       }
+
+      // Use structured editor if available
+      if (this.userStructuredEditor) {
+        await this.saveStructuredUserConfig();
+        return;
+      }
+
+      // Fallback to legacy editor
       await this.saveEditor(this.userEditor, `User ${this.selectedUserId} configuration`, async () => {
         await this.loadUserConfig(this.selectedUserId);
       });
+    },
+
+    async saveStructuredUserConfig() {
+      if (!this.userStructuredEditor || this.saving) return;
+
+      const patchResult = this.userStructuredEditor.getPatch();
+      if (!patchResult.hasChanges) {
+        this.showToast(`No changes to save for User ${this.selectedUserId} configuration.`, 'info');
+        return;
+      }
+
+      this.saving = true;
+      try {
+        const endpoint = `/config/users/${encodeURIComponent(this.selectedUserId)}`;
+        const patch = patchResult.patch;
+
+        // Validate first
+        const validation = await api(`${endpoint}/validate`, {
+          method: 'POST',
+          body: patch,
+        });
+        const changedFields = validation.changed_fields || [];
+
+        if (changedFields.length === 0) {
+          this.showToast(`No effective changes for User ${this.selectedUserId} configuration.`, 'info');
+          return;
+        }
+
+        const preview = changedFields.slice(0, 12).join('\n');
+        const accepted = window.confirm(
+          `Save User ${this.selectedUserId} configuration?\n\nChanged fields:\n${preview}${changedFields.length > 12 ? '\n...' : ''}`
+        );
+        if (!accepted) return;
+
+        const result = await api(endpoint, {
+          method: 'PATCH',
+          body: patch,
+        });
+
+        if (result.restart_required) {
+          this.restartNotice = 'Configuration was saved. Restart is required for running daemon(s).';
+        }
+
+        // Reload the page
+        await this.loadUserConfig(this.selectedUserId);
+        await this.loadStatus();
+        await this.refreshOnboardingStatus();
+
+        this.showToast(`User ${this.selectedUserId} configuration saved successfully.`, 'success');
+      } catch (error) {
+        this.showToast(error.message, 'error');
+      } finally {
+        this.saving = false;
+      }
     },
 
     async addUser() {

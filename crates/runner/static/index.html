@@ -10,6 +10,7 @@
   <script defer src="/js/collection-editor.js"></script>
   <script defer src="/js/config-agent.js"></script>
   <script defer src="/js/config-runner.js"></script>
+  <script defer src="/js/config-user.js"></script>
   <script defer src="/js/onboarding.js"></script>
   <script defer src="/js/control.js"></script>
   <script defer src="/js/logs.js"></script>
@@ -259,50 +260,11 @@
               <span class="file-path" x-text="userEditor && userEditor.filePath"></span>
             </div>
 
-            <div class="editor-panel">
-              <template x-for="field in ((userEditor && userEditor.fields) || [])" :key="field.path">
-                <div class="field-row">
-                  <label class="field-label" x-text="field.path" :for="'user-' + field.path"></label>
-
-                  <input x-show="field.type === 'string'" type="text" class="text-input"
-                         :id="'user-' + field.path"
-                         :value="field.value"
-                         @input="updateTextField(userEditor, field, $event.target.value)"
-                         @keydown.enter="saveUserConfig()">
-
-                  <input x-show="field.type === 'number'" type="number" class="text-input"
-                         :id="'user-' + field.path"
-                         :value="field.value"
-                         @input="updateNumberField(userEditor, field, $event.target.value)"
-                         @keydown.enter="saveUserConfig()">
-
-                  <label x-show="field.type === 'boolean'" class="switch-row">
-                    <input type="checkbox" :checked="field.value"
-                           @change="updateBooleanField(userEditor, field, $event.target.checked)">
-                    <span x-text="field.value ? 'true' : 'false'"></span>
-                  </label>
-
-                  <div x-show="field.type === 'secret'" class="secret-row">
-                    <input type="password" class="text-input" placeholder="********"
-                           :id="'user-' + field.path"
-                           :value="field.value"
-                           @input="updateTextField(userEditor, field, $event.target.value)"
-                           @keydown.enter="saveUserConfig()">
-                    <button class="btn btn-muted" @click="clearSecretField(userEditor, field)">Clear</button>
-                  </div>
-
-                  <textarea x-show="field.type === 'json'" class="json-input"
-                            :id="'user-' + field.path"
-                            @input="updateJsonField(userEditor, field, $event.target.value)"
-                            x-text="field.value"></textarea>
-
-                  <p x-show="field.parseError" class="error-text" x-text="field.parseError"></p>
-                </div>
-              </template>
-            </div>
+            <!-- Structured editor container -->
+            <div id="user-structured-editor" class="structured-editor"></div>
 
             <div class="actions-row">
-              <button class="btn btn-primary" :disabled="saving || !editorHasChanges(userEditor)" @click="saveUserConfig()">
+              <button class="btn btn-primary" :disabled="saving" @click="saveUserConfig()">
                 <span x-show="saving" class="spinner"></span>
                 Validate &amp; Save
               </button>

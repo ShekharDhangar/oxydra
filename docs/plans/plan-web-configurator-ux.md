@@ -2,7 +2,7 @@
 
 ## Status
 
-- **State:** In Progress (Phase 4 complete)
+- **State:** In Progress (Phase 5 complete)
 - **Issue:** Follow-up to [#7](https://github.com/shantanugoel/oxydra/issues/7)
 - **Scope:** `runner` crate (backend API + frontend static files)
 - **Prerequisite:** Web configurator V1 complete (plan-web-configurator.md)
@@ -611,40 +611,42 @@ Each sender binding is a card with:
 
 ---
 
-### Phase 5: User Config Editor Rewrite
+### Phase 5: User Config Editor Rewrite ✅
 
 **Goal:** Transform the User Config page to structured forms.
 
+**Status:** Complete
+
 **Steps:**
 
-1. **Render Mounts section**:
+1. ✅ **Render Mounts section**:
    - Optional text fields for shared/tmp/vault paths
 
-2. **Render Resources section**:
+2. ✅ **Render Resources section**:
    - Optional number fields for vCPUs/memory/processes
 
-3. **Render Credential References** (collection editor):
+3. ✅ **Render Credential References** (collection editor):
    - Key-value map with secret masking on values
    - Add/remove credential entries
 
-4. **Render Behavior Overrides section**:
+4. ✅ **Render Behavior Overrides section**:
    - `sandbox_tier` as optional dropdown (with "Use runner default" empty option)
    - `shell_enabled` as optional boolean (three-state: unset/true/false)
    - `browser_enabled` as optional boolean (three-state: unset/true/false)
 
-5. **Render Channels section**:
+5. ✅ **Render Channels section**:
    - Telegram as optional sub-section with "Enable" toggle
    - When enabled: structured form for all Telegram fields
    - Senders as a collection editor (array of sender bindings)
    - Each sender: platform_ids as tag list, display_name as text
 
 **Verification gate:**
-- All User Config fields have proper labels, help text, and input types
-- Credential refs addition/removal works with secret masking
-- Telegram channel enable/disable creates/removes config correctly
-- Sender binding addition/removal works
-- Save/reload round-trip works
-- All existing tests pass
+- ✅ All User Config fields have proper labels, help text, and input types
+- ✅ Credential refs addition/removal works with secret masking
+- ✅ Telegram channel enable/disable creates/removes config correctly
+- ✅ Sender binding addition/removal works
+- ✅ Save/reload round-trip works
+- ✅ All existing tests pass
 
 ---
 
