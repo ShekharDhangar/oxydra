@@ -24,8 +24,8 @@ tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
 types = { path = "../types" }
 uuid = { version = "1", features = ["v4"] }
-wasmtime = { version = "41", optional = true }
-wasmtime-wasi = { version = "41", optional = true }
+wasmtime = { version = "42", optional = true }
+wasmtime-wasi = { version = "42", optional = true }
 
 [dev-dependencies]
 memory = { path = "../memory" }
