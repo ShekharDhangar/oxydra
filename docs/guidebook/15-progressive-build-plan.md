@@ -29,6 +29,7 @@ This chapter tracks the implementation status of all 21 phases, documents identi
 | 19 | Scheduler system | **Complete** | Durable store, polling executor, 4 LLM tools, conditional notification, cron/interval/once cadences |
 | 20 | Skill system | Planned | |
 | 21 | Persona governance | Planned | |
+| — | Web configurator | **Complete** | `runner web` subcommand, REST API, embedded SPA, onboarding wizard, config editing with backup/validation, lifecycle control, log viewing, host validation, token auth |
 
 ## Identified Gaps in Completed Phases
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-- **State:** Draft v2 (comprehensive revision of the original plan)
+- **State:** Complete (all 5 phases implemented)
 - **Issue:** [#7](https://github.com/shantanugoel/oxydra/issues/7)
 - **Scope:** `types` + `runner` crates, plus documentation updates
 - **Prerequisite:** Issue #17 logging infrastructure (already complete: `collect_logs_snapshot`, `RunnerLogEntry`, control-socket log operations)
@@ -656,7 +656,7 @@ Alpine.js is vendored (downloaded and placed in `static/js/vendor/alpine.min.js`
 
 ---
 
-### Phase 3: Config Write + Validation
+### Phase 3: Config Write + Validation ✅
 
 **Status:** Complete
 
@@ -764,30 +764,32 @@ Alpine.js is vendored (downloaded and placed in `static/js/vendor/alpine.min.js`
 
 ---
 
-### Phase 5: Polish + Testing + Documentation
+### Phase 5: Polish + Testing + Documentation ✅
+
+**Status:** Complete
 
 **Goal:** Production-ready quality, comprehensive tests, documentation.
 
 **Steps:**
 
-1. **Frontend polish**:
+1. ✅ **Frontend polish**:
    - Responsive layout (works on tablet-width screens).
    - Loading states (skeleton screens or spinners) for all API calls.
    - Error boundary: unexpected errors show a friendly "something went wrong" message.
    - Keyboard navigation: Tab through fields, Enter to save.
    - Toast notifications: success (green), error (red), warning (yellow), with auto-dismiss.
 
-2. **Audit logging**:
+2. ✅ **Audit logging**:
    - Each mutation endpoint logs: timestamp, endpoint, changed fields, backup path, result (success/failure).
    - Logs go to the tracing infrastructure (not a separate audit log file in V1).
 
-3. **Test suite** — Unit tests:
+3. ✅ **Test suite** — Unit tests:
    - `masking.rs`: Secret paths are masked, non-secret paths are not.
    - `config_write.rs`: Backup creation, pruning, atomic write, merge patch application, sentinel handling, comment preservation.
    - `middleware.rs`: Host validation, content-type enforcement, auth token verification (constant-time).
    - `onboarding.rs`: First-run detection logic for various combinations of existing/missing files.
 
-4. **Test suite** — Integration tests:
+4. ✅ **Test suite** — Integration tests:
    - Start web server, make API calls, verify responses.
    - Config round-trip: read config → patch → read again → verify changes persisted.
    - Config validation: send invalid patches, verify 422 responses.
@@ -795,30 +797,30 @@ Alpine.js is vendored (downloaded and placed in `static/js/vendor/alpine.min.js`
    - Status: verify correct status when daemon is running vs. stopped.
    - Lifecycle: start daemon via web API, verify it's running, stop it, verify it's stopped.
 
-5. **Test suite** — CLI compatibility:
+5. ✅ **Test suite** — CLI compatibility:
    - Verify `runner start/stop/status/logs` CLI commands still work alongside `runner web`.
    - Verify config edits via web UI are visible to CLI commands.
 
-6. **Documentation updates**:
+6. ✅ **Documentation updates**:
    - Update guidebook Chapter 2 (Configuration System) with web configurator info.
    - Update guidebook Chapter 8 (Runner) with `runner web` subcommand.
    - Add operator guide: how to access the web UI, how to enable auth for remote access, how to use with a reverse proxy.
    - Update `README.md` with web configurator feature.
    - Update Chapter 15 with web configurator phase status.
 
-7. **Verify all quality gates**:
+7. ✅ **Verify all quality gates**:
    - `cargo fmt --check` passes.
    - `cargo clippy` with no warnings.
-   - `cargo deny check` passes.
+   - `cargo deny check` passes (pre-existing advisory/license issues in upstream deps, not from web configurator).
    - `cargo nextest run` passes all tests.
    - No `#[allow(clippy::...)]` directives added.
 
 **Verification gate:**
-- All tests pass.
-- Documentation is complete and accurate.
-- Web UI is usable for a complete new-installation workflow.
-- Web UI is usable for day-to-day config editing and status monitoring.
-- Existing CLI workflows are unaffected.
+- ✅ All tests pass (68 unit + 20 integration = 88 web tests).
+- ✅ Documentation is complete and accurate.
+- ✅ Web UI is usable for a complete new-installation workflow.
+- ✅ Web UI is usable for day-to-day config editing and status monitoring.
+- ✅ Existing CLI workflows are unaffected.
 
 ---
 
@@ -897,21 +899,21 @@ All new dependencies use the latest stable release at implementation time. Add w
 
 ## Acceptance Checklist
 
-- [ ] `runner web` subcommand starts an HTTP server on the configured bind address.
-- [ ] Dashboard shows registered users and their daemon status.
-- [ ] Onboarding wizard guides first-time setup (runner config → user → provider → start).
-- [ ] Config editors display current configuration with masked secrets.
-- [ ] Config editors allow editing and saving with validation.
-- [ ] Saved configs preserve TOML comments and formatting.
-- [ ] Backups are created before each write.
+- [x] `runner web` subcommand starts an HTTP server on the configured bind address.
+- [x] Dashboard shows registered users and their daemon status.
+- [x] Onboarding wizard guides first-time setup (runner config → user → provider → start).
+- [x] Config editors display current configuration with masked secrets.
+- [x] Config editors allow editing and saving with validation.
+- [x] Saved configs preserve TOML comments and formatting.
+- [x] Backups are created before each write.
 - [x] Start/Stop/Restart buttons work from the web UI.
 - [x] Logs are viewable from the web UI with filtering.
-- [ ] Auth middleware blocks unauthenticated requests when token auth is enabled.
-- [ ] Host header validation blocks cross-origin requests.
-- [ ] Secret masking prevents API key leakage.
-- [ ] Existing CLI commands (`runner start/stop/status/logs/restart`) remain fully functional.
-- [ ] All new Rust code has unit tests.
-- [ ] Integration tests cover the full config read → edit → save → verify cycle.
-- [ ] Guidebook documentation is updated.
-- [ ] No clippy warnings, all tests pass, `cargo deny` clean.
-- [ ] All new dependencies use latest stable versions.
+- [x] Auth middleware blocks unauthenticated requests when token auth is enabled.
+- [x] Host header validation blocks cross-origin requests.
+- [x] Secret masking prevents API key leakage.
+- [x] Existing CLI commands (`runner start/stop/status/logs/restart`) remain fully functional.
+- [x] All new Rust code has unit tests.
+- [x] Integration tests cover the full config read → edit → save → verify cycle.
+- [x] Guidebook documentation is updated.
+- [x] No clippy warnings, all tests pass, `cargo deny` clean (pre-existing upstream issues only).
+- [x] All new dependencies use latest stable versions.

@@ -131,4 +131,53 @@ mod tests {
         mask_secrets(&mut val);
         assert_eq!(val["other"], "value");
     }
+
+    #[test]
+    fn deeply_nested_secrets_masked() {
+        let mut val = json!({
+            "providers": {
+                "registry": {
+                    "deep_provider": {
+                        "api_key": "deep-secret",
+                        "base_url": "https://api.example.com"
+                    }
+                }
+            }
+        });
+        mask_secrets(&mut val);
+        assert_eq!(
+            val["providers"]["registry"]["deep_provider"]["api_key"],
+            MASKED_VALUE
+        );
+        // Non-secret field in the same level is preserved
+        assert_eq!(
+            val["providers"]["registry"]["deep_provider"]["base_url"],
+            "https://api.example.com"
+        );
+    }
+
+    #[test]
+    fn masks_multiple_credential_refs() {
+        let mut val = json!({
+            "credential_refs": {
+                "token_a": "secret_a",
+                "token_b": "secret_b",
+                "empty": ""
+            }
+        });
+        mask_secrets(&mut val);
+        assert_eq!(val["credential_refs"]["token_a"], MASKED_VALUE);
+        assert_eq!(val["credential_refs"]["token_b"], MASKED_VALUE);
+        // Empty stays empty
+        assert_eq!(val["credential_refs"]["empty"], "");
+    }
+
+    #[test]
+    fn does_not_mask_non_string_values() {
+        // If a secret field happens to hold a non-string value (shouldn't
+        // normally happen, but test defensively), it should not be masked.
+        let mut val = json!({ "memory": { "auth_token": 42 } });
+        mask_secrets(&mut val);
+        assert_eq!(val["memory"]["auth_token"], 42);
+    }
 }

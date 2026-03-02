@@ -29,6 +29,7 @@ Oxydra is designed for people who want an agent runtime they can self-host, insp
 - **Durable scheduler**: One-off and periodic jobs with run history and notification routing.
 - **Isolation model**: Process, container, and microVM tiers with WASM sandboxing as defense-in-depth.
 - **Gateway + channels**: WebSocket gateway with per-user multi-session support, plus Telegram channel adapter.
+- **Web configurator**: Browser-based dashboard for configuration editing, daemon control, log viewing, and guided onboarding — no extra tooling required.
 - **Deterministic configuration**: Layered config (defaults/files/env/CLI) with explicit validation.
 
 ### Isolation tiers at a glance
@@ -268,6 +269,33 @@ platform_ids = ["12345678"]
 
 Only IDs listed in `[[channels.telegram.senders]]` are allowed to interact with your agent.
 Telegram supports the same session commands (`/new`, `/sessions`, `/switch`, `/cancel`, `/cancelall`, `/status`).
+
+### 9) (Optional) Web Configurator
+
+The web configurator provides a browser-based dashboard for managing Oxydra without editing TOML files directly.
+
+```bash
+# Start the web configurator
+runner --config .oxydra/runner.toml web
+
+# Custom bind address
+runner --config .oxydra/runner.toml web --bind 0.0.0.0:8080
+```
+
+Then open `http://127.0.0.1:9400` in your browser. The dashboard offers:
+- **Setup wizard** for first-time configuration
+- **Config editors** for runner, agent, and user settings (with validation and backups)
+- **Control panel** to start/stop/restart daemons
+- **Log viewer** with filtering and auto-refresh
+- **Status dashboard** showing registered users and daemon health
+
+The web server binds to localhost only by default. To enable token auth for remote access, add to `runner.toml`:
+
+```toml
+[web]
+auth_mode = "token"
+auth_token_env = "OXYDRA_WEB_TOKEN"
+```
 
 ### Quick troubleshooting
 

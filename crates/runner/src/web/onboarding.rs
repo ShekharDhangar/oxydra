@@ -187,4 +187,49 @@ api_key = "sk-test-key"
         assert_eq!(json["data"]["checks"]["agent_config"], true);
         assert_eq!(json["data"]["checks"]["has_provider"], true);
     }
+
+    #[tokio::test]
+    async fn onboarding_reports_partial_setup() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("runner.toml");
+        // Runner config exists but no users
+        std::fs::write(
+            &config_path,
+            r#"
+config_version = "1.0.1"
+workspace_root = "workspaces"
+"#,
+        )
+        .unwrap();
+
+        let config = types::RunnerGlobalConfig::default();
+        let state = Arc::new(WebState::new(
+            config,
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
+        let app = crate::web::build_router(state);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/onboarding/status")
+                    .header("host", "127.0.0.1:9400")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["data"]["needs_setup"], true);
+        assert_eq!(json["data"]["checks"]["runner_config"], true);
+        assert_eq!(json["data"]["checks"]["has_users"], false);
+        assert_eq!(json["data"]["checks"]["agent_config"], false);
+        assert_eq!(json["data"]["checks"]["has_provider"], false);
+    }
 }

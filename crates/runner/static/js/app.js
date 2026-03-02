@@ -246,6 +246,7 @@ function app() {
       user_id: '',
       config_path: '',
     },
+    pageError: '',
     onboardingWizard: onboardingFactory(),
     controlState: window.OxydraControl?.createControlState
       ? window.OxydraControl.createControlState()
@@ -309,6 +310,7 @@ function app() {
 
     async onPageChange() {
       this.loading = true;
+      this.pageError = '';
       try {
         if (this.currentPage === 'dashboard') {
           await this.loadStatus();
@@ -326,6 +328,7 @@ function app() {
           this.seedOnboardingWizard();
         }
       } catch (error) {
+        this.pageError = error.message || 'An unexpected error occurred.';
         this.showToast(error.message, 'error');
       } finally {
         this.loading = false;

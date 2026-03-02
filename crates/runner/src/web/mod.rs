@@ -76,7 +76,7 @@ pub async fn run_web_server(
     Ok(())
 }
 
-fn build_router(state: Arc<WebState>) -> Router {
+pub fn build_router(state: Arc<WebState>) -> Router {
     let api = Router::new()
         .route("/meta", get(meta_handler))
         // Phase 2 + 3: config read/write endpoints

@@ -421,10 +421,25 @@ pub struct RunnerGlobalConfig {
     pub users: BTreeMap<String, UserRegistration>,
     pub default_tier: SandboxTier,
     pub guest_images: GuestImageConfig,  // oxydra-vm and shell-vm image paths/tags
+    pub web: WebConfig,                  // Web configurator settings
 }
 ```
 
 This file contains only infrastructure-uniform settings that cannot meaningfully vary per user.
+
+#### `WebConfig` (Web Configurator)
+
+```rust
+pub struct WebConfig {
+    pub enabled: bool,                  // default: true
+    pub bind: String,                   // default: "127.0.0.1:9400"
+    pub auth_mode: WebAuthMode,         // "disabled" or "token"
+    pub auth_token_env: Option<String>, // env var name for bearer token
+    pub auth_token: Option<String>,     // inline token (prefer env var)
+}
+```
+
+The `[web]` section in `runner.toml` configures the web configurator server started via `runner web`. When `auth_mode = "token"`, all API endpoints require a bearer token. The token is resolved from the env var named in `auth_token_env` first, then from the inline `auth_token` field. The web server binds to loopback by default and enforces Host header validation to prevent DNS rebinding attacks.
 
 ### `RunnerUserConfig` (User-scoped)
 

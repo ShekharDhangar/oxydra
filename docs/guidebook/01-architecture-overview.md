@@ -62,7 +62,7 @@ The workspace enforces a strict three-layer dependency graph. Lower layers never
 | Core | `tools-macros` | `#[tool]` attribute macro for automatic schema generation from Rust function signatures |
 | Core | `runtime` | Agent turn loop, state machine, tool dispatch, self-correction, token budgeting, credential scrubbing, scheduler executor |
 | Core | `memory` | libSQL persistence, SQL migrations, hybrid retrieval (vector + FTS5), embedding pipeline, rolling summarization, scheduler store (schedule definitions + run history) |
-| Application | `runner` | Host entry point, per-user VM/container provisioning, bootstrap envelope, workspace directory creation, VM bootstrap logic (config loading via `figment`, provider/memory/tools initialization) |
+| Application | `runner` | Host entry point, per-user VM/container provisioning, bootstrap envelope, workspace directory creation, VM bootstrap logic (config loading via `figment`, provider/memory/tools initialization), web configurator (REST API + embedded SPA) |
 | Application | `shell-daemon` | Guest-side RPC server for shell command execution and browser session management |
 | Application | `channels` | Channel registry, concrete channel adapter implementations (feature-flagged) |
 | Application | `gateway` | Axum WebSocket server, session management, turn routing to `AgentRuntime` |

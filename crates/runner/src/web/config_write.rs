@@ -99,6 +99,14 @@ pub async fn patch_runner_config(
 
     let restart_required = any_registered_daemon_running(&state).await;
 
+    tracing::info!(
+        endpoint = "PATCH /config/runner",
+        changed_fields = ?prepared.changed_fields,
+        backup_path = ?backup_path.as_ref().map(|p| p.display().to_string()),
+        result = "success",
+        "web configurator: runner config patched"
+    );
+
     ok_response(PatchConfigResponse {
         changed_fields: prepared.changed_fields,
         backup_path: backup_path.map(|path| path.display().to_string()),
@@ -141,6 +149,14 @@ pub async fn patch_agent_config(
     };
 
     let restart_required = any_registered_daemon_running(&state).await;
+
+    tracing::info!(
+        endpoint = "PATCH /config/agent",
+        changed_fields = ?prepared.changed_fields,
+        backup_path = ?backup_path.as_ref().map(|p| p.display().to_string()),
+        result = "success",
+        "web configurator: agent config patched"
+    );
 
     ok_response(PatchConfigResponse {
         changed_fields: prepared.changed_fields,
@@ -189,6 +205,15 @@ pub async fn patch_user_config(
     };
 
     let restart_required = user_daemon_running(&state, &user_id).await;
+
+    tracing::info!(
+        endpoint = "PATCH /config/users/{user_id}",
+        user_id = %user_id,
+        changed_fields = ?prepared.changed_fields,
+        backup_path = ?backup_path.as_ref().map(|p| p.display().to_string()),
+        result = "success",
+        "web configurator: user config patched"
+    );
 
     ok_response(PatchConfigResponse {
         changed_fields: prepared.changed_fields,
@@ -316,6 +341,15 @@ pub async fn create_user(
         }
     };
 
+    tracing::info!(
+        endpoint = "POST /config/users",
+        user_id = %user_id,
+        config_path = %request.config_path.trim(),
+        backup_path = ?runner_backup.as_ref().map(|p| p.display().to_string()),
+        result = "success",
+        "web configurator: user created"
+    );
+
     ok_response(CreateUserResponse {
         user_id,
         config_path: request.config_path.trim().to_owned(),
@@ -369,6 +403,15 @@ pub async fn delete_user(
         }
         deleted_config_file = true;
     }
+
+    tracing::info!(
+        endpoint = "DELETE /config/users/{user_id}",
+        user_id = %user_id,
+        deleted_config_file = deleted_config_file,
+        backup_path = ?runner_backup.as_ref().map(|p| p.display().to_string()),
+        result = "success",
+        "web configurator: user deleted"
+    );
 
     ok_response(DeleteUserResponse {
         user_id,
@@ -859,6 +902,8 @@ mod tests {
             .header("content-type", "application/json")
     }
 
+    // ── merge patch ────────────────────────────────────────────────
+
     #[test]
     fn merge_patch_preserves_comments_and_secret_sentinel() {
         let mut document = r#"
@@ -887,6 +932,91 @@ auth_token = "super-secret"
     }
 
     #[test]
+    fn merge_patch_removes_null_keys() {
+        let mut document = r#"
+workspace_root = "old"
+keep_me = true
+"#
+        .parse::<DocumentMut>()
+        .unwrap();
+
+        let patch = json!({ "keep_me": JsonValue::Null });
+        apply_json_merge_patch(&mut document, &patch, SECRET_SENTINEL).unwrap();
+        let rendered = document.to_string();
+        assert!(rendered.contains("workspace_root"));
+        assert!(!rendered.contains("keep_me"));
+    }
+
+    #[test]
+    fn merge_patch_adds_new_keys() {
+        let mut document = r#"
+workspace_root = "workspaces"
+"#
+        .parse::<DocumentMut>()
+        .unwrap();
+
+        let patch = json!({ "new_field": "hello" });
+        apply_json_merge_patch(&mut document, &patch, SECRET_SENTINEL).unwrap();
+        let rendered = document.to_string();
+        assert!(rendered.contains("new_field = \"hello\""));
+        assert!(rendered.contains("workspace_root = \"workspaces\""));
+    }
+
+    #[test]
+    fn merge_patch_creates_nested_tables() {
+        let mut document = "".parse::<DocumentMut>().unwrap();
+        let patch = json!({ "section": { "key": "value" } });
+        apply_json_merge_patch(&mut document, &patch, SECRET_SENTINEL).unwrap();
+        let rendered = document.to_string();
+        assert!(rendered.contains("[section]"));
+        assert!(rendered.contains("key = \"value\""));
+    }
+
+    #[test]
+    fn merge_patch_preserves_inline_comments_on_unchanged_lines() {
+        let mut document = r#"
+# header comment
+workspace_root = "old" # inline comment
+keep_me = 42 # this stays
+"#
+        .parse::<DocumentMut>()
+        .unwrap();
+
+        let patch = json!({ "workspace_root": "new" });
+        apply_json_merge_patch(&mut document, &patch, SECRET_SENTINEL).unwrap();
+        let rendered = document.to_string();
+        assert!(rendered.contains("# header comment"));
+        assert!(rendered.contains("keep_me = 42 # this stays"));
+    }
+
+    #[test]
+    fn merge_patch_handles_array_values() {
+        let mut document = r#"
+items = ["a", "b"]
+"#
+        .parse::<DocumentMut>()
+        .unwrap();
+
+        let patch = json!({ "items": ["x", "y", "z"] });
+        apply_json_merge_patch(&mut document, &patch, SECRET_SENTINEL).unwrap();
+        let rendered = document.to_string();
+        assert!(rendered.contains("x"));
+        assert!(rendered.contains("y"));
+        assert!(rendered.contains("z"));
+        assert!(!rendered.contains("\"a\""));
+    }
+
+    #[test]
+    fn merge_patch_rejects_non_object_root() {
+        let mut document = "".parse::<DocumentMut>().unwrap();
+        let patch = json!("just a string");
+        let result = apply_json_merge_patch(&mut document, &patch, SECRET_SENTINEL);
+        assert!(result.is_err());
+    }
+
+    // ── changed fields ─────────────────────────────────────────────
+
+    #[test]
     fn changed_fields_include_nested_paths() {
         let before = json!({
             "runtime": {
@@ -907,6 +1037,170 @@ auth_token = "super-secret"
         assert!(changed.contains(&"runtime.max_cost".to_owned()));
         assert!(!changed.contains(&"runtime.turn_timeout_secs".to_owned()));
     }
+
+    #[test]
+    fn changed_fields_identical_returns_empty() {
+        let value = json!({ "a": 1, "b": "hello" });
+        let changed = compute_changed_fields(&value, &value);
+        assert!(changed.is_empty());
+    }
+
+    #[test]
+    fn changed_fields_removed_key() {
+        let before = json!({ "a": 1, "b": 2 });
+        let after = json!({ "a": 1 });
+        let changed = compute_changed_fields(&before, &after);
+        assert!(changed.contains(&"b".to_owned()));
+        assert!(!changed.contains(&"a".to_owned()));
+    }
+
+    #[test]
+    fn changed_fields_array_length_difference() {
+        let before = json!({ "items": [1, 2] });
+        let after = json!({ "items": [1, 2, 3] });
+        let changed = compute_changed_fields(&before, &after);
+        assert!(changed.contains(&"items".to_owned()));
+    }
+
+    #[test]
+    fn changed_fields_type_change() {
+        let before = json!({ "val": 42 });
+        let after = json!({ "val": "forty-two" });
+        let changed = compute_changed_fields(&before, &after);
+        assert!(changed.contains(&"val".to_owned()));
+    }
+
+    // ── backup + prune ─────────────────────────────────────────────
+
+    #[test]
+    fn backup_file_creates_timestamped_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        fs::write(&file, "original content").unwrap();
+
+        let backup_path = backup_file(&file).unwrap();
+        assert!(backup_path.exists());
+
+        let backup_name = backup_path.file_name().unwrap().to_string_lossy();
+        assert!(
+            backup_name.starts_with("config.toml.bak."),
+            "expected backup name to start with 'config.toml.bak.', got: {backup_name}"
+        );
+        assert_eq!(
+            fs::read_to_string(&backup_path).unwrap(),
+            "original content"
+        );
+    }
+
+    #[test]
+    fn prune_backups_keeps_latest_n() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        fs::write(&file, "content").unwrap();
+
+        // Create 15 backups with distinct names
+        for i in 0..15 {
+            let name = format!("config.toml.bak.{}", 1000 + i);
+            fs::write(dir.path().join(name), "backup").unwrap();
+        }
+
+        prune_backups(&file, 5).unwrap();
+
+        let remaining: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("config.toml.bak.")
+            })
+            .collect();
+
+        assert_eq!(remaining.len(), 5);
+    }
+
+    #[test]
+    fn prune_backups_no_op_when_fewer_than_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        fs::write(&file, "content").unwrap();
+
+        fs::write(dir.path().join("config.toml.bak.100"), "backup").unwrap();
+        fs::write(dir.path().join("config.toml.bak.200"), "backup").unwrap();
+
+        prune_backups(&file, 10).unwrap();
+
+        let remaining: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("config.toml.bak.")
+            })
+            .collect();
+
+        assert_eq!(remaining.len(), 2);
+    }
+
+    // ── atomic write ───────────────────────────────────────────────
+
+    #[test]
+    fn atomic_write_creates_parent_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("sub/dir/config.toml");
+        atomic_write(&file, "hello").unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "hello");
+    }
+
+    #[test]
+    fn atomic_write_overwrites_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        fs::write(&file, "old").unwrap();
+        atomic_write(&file, "new").unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "new");
+    }
+
+    #[test]
+    fn atomic_write_no_stale_temp_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        atomic_write(&file, "content").unwrap();
+
+        let temp_files: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(temp_files.is_empty(), "no temp files should remain");
+    }
+
+    // ── user ID validation ─────────────────────────────────────────
+
+    #[test]
+    fn validate_user_id_rejects_empty() {
+        assert!(validate_user_id("").is_err());
+        assert!(validate_user_id("   ").is_err());
+    }
+
+    #[test]
+    fn validate_user_id_rejects_path_traversal() {
+        assert!(validate_user_id("../etc").is_err());
+        assert!(validate_user_id("a/b").is_err());
+        assert!(validate_user_id("a\\b").is_err());
+    }
+
+    #[test]
+    fn validate_user_id_accepts_normal_names() {
+        assert!(validate_user_id("alice").is_ok());
+        assert!(validate_user_id("user-1").is_ok());
+        assert!(validate_user_id("user.name").is_ok());
+    }
+
+    // ── HTTP integration ───────────────────────────────────────────
 
     #[tokio::test]
     async fn patch_runner_config_creates_file_when_missing() {
@@ -937,6 +1231,81 @@ auth_token = "super-secret"
     }
 
     #[tokio::test]
+    async fn patch_runner_config_creates_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("runner.toml");
+        fs::write(
+            &config_path,
+            toml::to_string_pretty(&RunnerGlobalConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let state = Arc::new(WebState::new(
+            RunnerGlobalConfig::default(),
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
+        let app = crate::web::build_router(state);
+
+        let request = with_api_headers(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/v1/config/runner"),
+        )
+        .body(Body::from(
+            json!({ "workspace_root": "new/workspace" }).to_string(),
+        ))
+        .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: JsonValue = serde_json::from_slice(&body).unwrap();
+        assert!(json["data"]["backup_path"].is_string());
+        let backup_path = json["data"]["backup_path"].as_str().unwrap();
+        assert!(PathBuf::from(backup_path).exists());
+    }
+
+    #[tokio::test]
+    async fn patch_returns_changed_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("runner.toml");
+        fs::write(
+            &config_path,
+            toml::to_string_pretty(&RunnerGlobalConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let state = Arc::new(WebState::new(
+            RunnerGlobalConfig::default(),
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
+        let app = crate::web::build_router(state);
+
+        let request = with_api_headers(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/v1/config/runner"),
+        )
+        .body(Body::from(
+            json!({ "workspace_root": "changed/path" }).to_string(),
+        ))
+        .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: JsonValue = serde_json::from_slice(&body).unwrap();
+        let changed = json["data"]["changed_fields"].as_array().unwrap();
+        assert!(!changed.is_empty());
+    }
+
+    #[tokio::test]
     async fn validate_agent_config_rejects_invalid_runtime_limits() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("runner.toml");
@@ -964,6 +1333,86 @@ auth_token = "super-secret"
 
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn validate_agent_config_accepts_valid_patch() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("runner.toml");
+        fs::write(
+            &config_path,
+            toml::to_string_pretty(&RunnerGlobalConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let state = Arc::new(WebState::new(
+            RunnerGlobalConfig::default(),
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
+        let app = crate::web::build_router(state);
+
+        let request = with_api_headers(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/config/agent/validate"),
+        )
+        .body(Body::from(
+            json!({ "runtime": { "max_turns": 20 } }).to_string(),
+        ))
+        .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: JsonValue = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["data"]["valid"], true);
+    }
+
+    #[tokio::test]
+    async fn config_roundtrip_preserves_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("runner.toml");
+        fs::write(
+            &config_path,
+            toml::to_string_pretty(&RunnerGlobalConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let state = Arc::new(WebState::new(
+            RunnerGlobalConfig::default(),
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
+        let app = crate::web::build_router(state);
+
+        // Patch
+        let patch_request = with_api_headers(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/v1/config/runner"),
+        )
+        .body(Body::from(
+            json!({ "workspace_root": "roundtrip/test" }).to_string(),
+        ))
+        .unwrap();
+        let patch_response = app.clone().oneshot(patch_request).await.unwrap();
+        assert_eq!(patch_response.status(), StatusCode::OK);
+
+        // Read back
+        let get_request = Request::builder()
+            .uri("/api/v1/config/runner")
+            .header("host", "127.0.0.1:9400")
+            .body(Body::empty())
+            .unwrap();
+        let get_response = app.oneshot(get_request).await.unwrap();
+        assert_eq!(get_response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(get_response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: JsonValue = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["data"]["config"]["workspace_root"], "roundtrip/test");
+        assert_eq!(json["data"]["file_exists"], true);
     }
 
     #[tokio::test]
@@ -1007,5 +1456,99 @@ auth_token = "super-secret"
         let delete_response = app.oneshot(delete_request).await.unwrap();
         assert_eq!(delete_response.status(), StatusCode::OK);
         assert!(!user_config_path.exists());
+    }
+
+    #[tokio::test]
+    async fn create_user_rejects_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("runner.toml");
+        fs::write(
+            &config_path,
+            toml::to_string_pretty(&RunnerGlobalConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let state = Arc::new(WebState::new(
+            RunnerGlobalConfig::default(),
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
+        let app = crate::web::build_router(state);
+
+        let body_json =
+            json!({ "user_id": "alice", "config_path": "users/alice.toml" }).to_string();
+
+        let create1 = with_api_headers(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/config/users"),
+        )
+        .body(Body::from(body_json.clone()))
+        .unwrap();
+        let resp1 = app.clone().oneshot(create1).await.unwrap();
+        assert_eq!(resp1.status(), StatusCode::OK);
+
+        let create2 = with_api_headers(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/config/users"),
+        )
+        .body(Body::from(body_json))
+        .unwrap();
+        let resp2 = app.oneshot(create2).await.unwrap();
+        assert_eq!(resp2.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn delete_nonexistent_user_returns_404() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("runner.toml");
+        fs::write(
+            &config_path,
+            toml::to_string_pretty(&RunnerGlobalConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let state = Arc::new(WebState::new(
+            RunnerGlobalConfig::default(),
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
+        let app = crate::web::build_router(state);
+
+        let request = with_api_headers(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri("/api/v1/config/users/no-such-user"),
+        )
+        .body(Body::from("{}"))
+        .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn patch_nonexistent_user_returns_404() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("runner.toml");
+        fs::write(
+            &config_path,
+            toml::to_string_pretty(&RunnerGlobalConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let state = Arc::new(WebState::new(
+            RunnerGlobalConfig::default(),
+            config_path,
+            "127.0.0.1:9400".to_owned(),
+        ));
+        let app = crate::web::build_router(state);
+
+        let request = with_api_headers(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri("/api/v1/config/users/no-such-user"),
+        )
+        .body(Body::from(json!({ "something": "value" }).to_string()))
+        .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

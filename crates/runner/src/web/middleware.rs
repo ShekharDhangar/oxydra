@@ -144,4 +144,20 @@ mod tests {
         assert!(!constant_time_eq(b"secret", b"different"));
         assert!(!constant_time_eq(b"secret", b"secret-long"));
     }
+
+    #[test]
+    fn constant_time_eq_empty_strings_are_equal() {
+        assert!(constant_time_eq(b"", b""));
+    }
+
+    #[test]
+    fn constant_time_eq_rejects_different_lengths() {
+        assert!(!constant_time_eq(b"a", b"ab"));
+        assert!(!constant_time_eq(b"ab", b"a"));
+    }
+
+    #[test]
+    fn constant_time_eq_rejects_prefix_match() {
+        assert!(!constant_time_eq(b"token-full", b"token"));
+    }
 }

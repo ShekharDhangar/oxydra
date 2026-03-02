@@ -92,6 +92,54 @@ If the control socket doesn't exist or the connection is refused, `stop` and `st
 
 The legacy `--daemon` flag continues to work for backward compatibility — it enters the same daemon loop as `runner start` after the existing startup sequence.
 
+### Web Configurator (`runner web`)
+
+The `runner web` subcommand starts an HTTP-based web configurator that provides a browser UI and REST API for configuration management, daemon lifecycle control, and log viewing.
+
+```bash
+# Start the web configurator (default bind: 127.0.0.1:9400)
+runner web
+
+# Custom bind address
+runner web --bind 0.0.0.0:8080
+```
+
+The web configurator runs as an independent process, separate from per-user daemons. It:
+
+- **Reads/writes config files directly** — works even when no daemon is running
+- **Proxies lifecycle commands** to running daemons via the control socket protocol
+- **Provides an onboarding wizard** for first-time setup
+- **Masks secrets** in all API responses (API keys, auth tokens)
+- **Creates backups** before every config write (keeps last 10)
+- **Preserves TOML comments** during edits via `toml_edit`
+
+#### Security
+
+- Binds to `127.0.0.1` by default (loopback only)
+- Host header validation blocks DNS rebinding attacks
+- Content-Type enforcement on all mutation endpoints
+- Optional bearer token authentication via `[web]` config
+
+#### REST API
+
+All endpoints use a JSON envelope (`{ data, meta }` or `{ error, meta }`). Key routes:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/meta` | Server version, config path |
+| `GET` | `/api/v1/status` | Aggregated daemon status for all users |
+| `GET` | `/api/v1/config/runner` | Runner config (masked) |
+| `PATCH` | `/api/v1/config/runner` | JSON merge patch on runner config |
+| `GET` | `/api/v1/config/agent` | Agent config (masked) |
+| `PATCH` | `/api/v1/config/agent` | JSON merge patch on agent config |
+| `GET/POST` | `/api/v1/config/users` | List / create users |
+| `GET/PATCH/DELETE` | `/api/v1/config/users/{id}` | Read / update / delete user |
+| `POST` | `/api/v1/control/{id}/start\|stop\|restart` | Daemon lifecycle |
+| `GET` | `/api/v1/logs/{id}` | Log retrieval with filtering |
+| `GET` | `/api/v1/onboarding/status` | First-run setup detection |
+
+The embedded SPA is served at `/` and uses Alpine.js with hash-based routing. No build toolchain is required — all frontend assets are compiled into the binary via `rust-embed`.
+
 ## Bootstrap Envelope
 
 The runner communicates startup configuration to the guest via a length-prefixed JSON envelope, avoiding environment variables for sensitive data.
