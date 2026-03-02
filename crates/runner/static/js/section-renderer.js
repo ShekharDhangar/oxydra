@@ -66,20 +66,27 @@ window.SectionRenderer = (function () {
       }
     }
 
+    var alwaysExpanded = !!section.always_expanded;
+    if (alwaysExpanded) startExpanded = true;
+
     var card = el('div', 'sr-section');
     card.dataset.sectionId = section.id;
 
     // ── Header ──────────────────────────────────────────────────
     var header = el('div', 'sr-header');
-    header.setAttribute('role', 'button');
-    header.setAttribute('tabindex', '0');
+    if (!alwaysExpanded) {
+      header.setAttribute('role', 'button');
+      header.setAttribute('tabindex', '0');
+    }
     header.setAttribute('aria-expanded', String(startExpanded));
 
     var headerLeft = el('div', 'sr-header-left');
 
-    var chevron = el('span', 'sr-chevron');
-    chevron.textContent = startExpanded ? '▾' : '▸';
-    headerLeft.appendChild(chevron);
+    if (!alwaysExpanded) {
+      var chevron = el('span', 'sr-chevron');
+      chevron.textContent = startExpanded ? '▾' : '▸';
+      headerLeft.appendChild(chevron);
+    }
 
     var titleGroup = el('div', 'sr-title-group');
     var title = el('span', 'sr-title');
@@ -140,7 +147,7 @@ window.SectionRenderer = (function () {
     function toggleExpand() {
       isExpanded = !isExpanded;
       body.style.display = (isExpanded && sectionEnabled) ? '' : 'none';
-      chevron.textContent = isExpanded ? '▾' : '▸';
+      if (chevron) chevron.textContent = isExpanded ? '▾' : '▸';
       header.setAttribute('aria-expanded', String(isExpanded));
       // Move focus to first focusable element when expanding
       if (isExpanded && sectionEnabled) {
@@ -151,13 +158,15 @@ window.SectionRenderer = (function () {
       }
     }
 
-    header.addEventListener('click', toggleExpand);
-    header.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        toggleExpand();
-      }
-    });
+    if (!alwaysExpanded) {
+      header.addEventListener('click', toggleExpand);
+      header.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleExpand();
+        }
+      });
+    }
 
     // ── Render fields ───────────────────────────────────────────
     var widgets = {};

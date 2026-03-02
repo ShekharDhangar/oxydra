@@ -65,6 +65,9 @@ pub struct SchemaSection {
     /// Custom label when the optional section toggle is OFF (default: "Disabled").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub toggle_off_label: Option<String>,
+    /// When true the section is always expanded and cannot be collapsed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub always_expanded: bool,
 }
 
 /// Metadata for collection-type sections (providers, agents, etc.).
@@ -358,6 +361,7 @@ fn sec(id: &str, label: &str) -> SchemaSection {
         group_description: None,
         toggle_on_label: None,
         toggle_off_label: None,
+        always_expanded: false,
     }
 }
 
@@ -403,11 +407,12 @@ fn build_agent_schema() -> ConfigSchema {
             agent_selection_section(),
             agent_providers_section(),
             agent_catalog_section(),
+            // ── Group: Custom Agent Definitions ─────────────────────
+            agent_agents_section(),
             // ── Group: Agent Behavior ────────────────────────────────
             agent_runtime_section(),
             agent_context_budget_section(),
             agent_summarization_section(),
-            agent_agents_section(),
             // ── Group: Memory ────────────────────────────────────────
             agent_memory_section(),
             agent_memory_retrieval_section(),
@@ -775,7 +780,13 @@ fn agent_agents_section() -> SchemaSection {
              restrictions. Use these to create specialized agent variants."
                 .into(),
         ),
-        group: Some("agent_behavior".into()),
+        group: Some("custom_agent_definitions".into()),
+        group_label: Some("Custom Agent Definitions".into()),
+        group_description: Some(
+            "Define named agent variants with their own model, prompt, and tool settings"
+                .into(),
+        ),
+        always_expanded: true,
         fields: vec![
             SchemaField {
                 description: Some(
@@ -834,7 +845,7 @@ fn agent_agents_section() -> SchemaSection {
                 ..fld("_key", "Agent Name", "text")
             }),
         }),
-        ..sec("agents", "Agent Definitions")
+        ..sec("agents", "Custom Agent Definitions")
     }
 }
 

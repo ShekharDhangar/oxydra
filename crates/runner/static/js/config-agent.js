@@ -266,6 +266,28 @@ window.AgentConfigEditor = (function () {
     function renderCollectionSection(parent, sectionSchema, configValues, renderOpts) {
       insertGroupHeader(parent, sectionSchema);
 
+      // For always_expanded collections skip the wrapping section card and
+      // render the collection editor directly under the group header.
+      if (sectionSchema.always_expanded) {
+        var directContainer = el('div', 'sr-collection-direct');
+        parent.appendChild(directContainer);
+        var collectionData = getCollectionData(sectionSchema.id, configValues);
+        var collectionEditor = window.CollectionEditor.renderCollection(
+          directContainer,
+          sectionSchema,
+          collectionData,
+          {
+            dynamicSources: renderOpts.dynamicSources,
+            catalog: renderOpts.catalog,
+            onChange: function (patch) {
+              collectionChanges[sectionSchema.id] = patch;
+            },
+          }
+        );
+        collectionInstances[sectionSchema.id] = collectionEditor;
+        return;
+      }
+
       var sectionResult = window.SectionRenderer.renderSection(sectionSchema, configValues, {
         dynamicSources: renderOpts.dynamicSources,
         catalog: renderOpts.catalog,
@@ -279,11 +301,11 @@ window.AgentConfigEditor = (function () {
 
       // Now render the collection editor into the placeholder
       if (sectionResult.collectionPlaceholder) {
-        var collectionData = getCollectionData(sectionSchema.id, configValues);
-        var collectionEditor = window.CollectionEditor.renderCollection(
+        var collectionData2 = getCollectionData(sectionSchema.id, configValues);
+        var collectionEditor2 = window.CollectionEditor.renderCollection(
           sectionResult.collectionPlaceholder,
           sectionSchema,
-          collectionData,
+          collectionData2,
           {
             dynamicSources: renderOpts.dynamicSources,
             catalog: renderOpts.catalog,
@@ -292,7 +314,7 @@ window.AgentConfigEditor = (function () {
             },
           }
         );
-        collectionInstances[sectionSchema.id] = collectionEditor;
+        collectionInstances[sectionSchema.id] = collectionEditor2;
       }
     }
 
@@ -405,6 +427,7 @@ window.AgentConfigEditor = (function () {
     }
 
     function shouldStartExpanded(sectionSchema) {
+      if (sectionSchema.always_expanded) return true;
       // Start selection and general expanded, others collapsed
       var expandedIds = ['general', 'selection'];
       return expandedIds.indexOf(sectionSchema.id) !== -1;
