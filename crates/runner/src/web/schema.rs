@@ -1945,11 +1945,10 @@ mod tests {
             collect_section_field_paths(sub, paths);
         }
         // Collection key fields
-        if let Some(ref col) = section.collection {
-            if let Some(ref key_field) = col.key_field {
+        if let Some(ref col) = section.collection
+            && let Some(ref key_field) = col.key_field {
                 paths.push(key_field.path.clone());
             }
-        }
     }
 
     #[test]
@@ -2341,9 +2340,9 @@ mod tests {
     fn number_fields_with_constraints_have_valid_ranges() {
         fn check_section(section: &SchemaSection) {
             for field in &section.fields {
-                if field.input_type == "number" {
-                    if let Some(ref c) = field.constraints {
-                        if let (Some(min), Some(max)) = (c.min, c.max) {
+                if field.input_type == "number"
+                    && let Some(ref c) = field.constraints
+                        && let (Some(min), Some(max)) = (c.min, c.max) {
                             assert!(
                                 min <= max,
                                 "field '{}' has min ({}) > max ({})",
@@ -2352,8 +2351,6 @@ mod tests {
                                 max
                             );
                         }
-                    }
-                }
             }
             for sub in &section.subsections {
                 check_section(sub);
