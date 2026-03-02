@@ -398,7 +398,7 @@ EOF
   tar -czf "${release_dir}/${archive_name}" -C "$payload_dir" .
   local checksum
   checksum="$(sha256_file "${release_dir}/${archive_name}")"
-  printf '%s  %s\n' "$checksum" "$archive_name" > "${release_dir}/SHA256SUMS"
+  printf '%s  %s\n' "$checksum" "dist/${archive_name}" > "${release_dir}/SHA256SUMS"
 }
 
 setup_existing_install() {

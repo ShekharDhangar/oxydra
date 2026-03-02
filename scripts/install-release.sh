@@ -1039,7 +1039,7 @@ if ! curl -fL --retry 3 -o "${TMP_DIR}/SHA256SUMS" "$SHA_URL"; then
   fail "failed to download SHA256SUMS for ${TAG}"
 fi
 
-expected_sha="$(awk -v name="${ARCHIVE}" '{ file = $NF; sub(/^\*/, "", file); if (file == name) { print $1; exit } }' "${TMP_DIR}/SHA256SUMS")"
+expected_sha="$(awk -v name="${ARCHIVE}" '{ file = $NF; sub(/^\*/, "", file); n = split(file, parts, "/"); if (parts[n] == name) { print $1; exit } }' "${TMP_DIR}/SHA256SUMS")"
 [[ -n "$expected_sha" ]] || fail "could not find checksum entry for ${ARCHIVE} in SHA256SUMS"
 
 actual_sha="$(sha256_file "${TMP_DIR}/${ARCHIVE}")"
