@@ -614,6 +614,11 @@ pub async fn bootstrap_vm_runtime_with_paths(
     let startup_status = availability.startup_status(bootstrap.as_ref());
     let path_scrub_mappings = build_path_scrub_mappings(bootstrap.as_ref());
 
+    // Extract embedded reference files to the shared directory so the LLM
+    // can `cat` them from the shell (e.g. full Pinchtab API docs).
+    let shared_dir = resolve_shared_dir(bootstrap.as_ref());
+    crate::skills::extract_builtin_references(&shared_dir);
+
     // Load, evaluate, and render active skills for system prompt injection.
     let skills_note = {
         let env: std::collections::HashMap<String, String> = std::env::vars().collect();
@@ -758,6 +763,23 @@ const SYSTEM_MD_FILE: &str = "SYSTEM.md";
 const SHARED_PATH_NAME: &str = "shared";
 const TMP_PATH_NAME: &str = "tmp";
 const VAULT_PATH_NAME: &str = "vault";
+
+/// Resolves the shared directory from the bootstrap envelope or defaults to
+/// `<cwd>/shared/`. Used for extracting embedded skill reference files.
+fn resolve_shared_dir(bootstrap: Option<&RunnerBootstrapEnvelope>) -> PathBuf {
+    match bootstrap {
+        Some(b) => {
+            if let Some(policy) = b.runtime_policy.as_ref() {
+                PathBuf::from(&policy.mounts.shared)
+            } else {
+                PathBuf::from(&b.workspace_root).join(SHARED_PATH_NAME)
+            }
+        }
+        None => env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(SHARED_PATH_NAME),
+    }
+}
 
 /// Constructs host-path → virtual-path scrub mappings from the bootstrap
 /// envelope so that tool output and error messages never leak host filesystem

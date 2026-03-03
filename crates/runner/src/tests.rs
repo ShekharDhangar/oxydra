@@ -2271,68 +2271,76 @@ fn apply_browser_shell_overlay_preserves_existing_deny_and_replace_defaults() {
 }
 
 #[test]
-fn copy_skill_reference_files_copies_to_target() {
-    let source_root = temp_dir("skill-ref-src");
-    let skill_dir = source_root
-        .join(super::SKILLS_SOURCE_DIR)
-        .join("BrowserAutomation")
-        .join("references");
-    fs::create_dir_all(&skill_dir).unwrap();
-    fs::write(skill_dir.join("pinchtab-api.md"), "# API Reference\n").unwrap();
-    fs::write(skill_dir.join("extra.md"), "# Extra\n").unwrap();
+fn extract_builtin_references_writes_embedded_reference_files() {
+    let shared_dir = temp_dir("extract-refs");
+    crate::skills::extract_builtin_references(&shared_dir);
 
-    let shared_dir = temp_dir("skill-ref-shared");
+    // The embedded BrowserAutomation skill should have its reference extracted.
+    let target = shared_dir.join(".oxydra/skills/BrowserAutomation/references/pinchtab-api.md");
+    assert!(
+        target.is_file(),
+        "expected embedded reference file at {}",
+        target.display()
+    );
 
-    super::copy_skill_reference_files(&source_root, &shared_dir).expect("copy should succeed");
+    let content = fs::read_to_string(&target).unwrap();
+    assert!(
+        content.contains("Pinchtab"),
+        "reference file should contain Pinchtab API docs"
+    );
 
-    let target = shared_dir
-        .join(super::SKILL_REFS_DIR)
-        .join("BrowserAutomation")
-        .join("references");
-    assert!(target.join("pinchtab-api.md").is_file());
-    assert!(target.join("extra.md").is_file());
-
-    let content = fs::read_to_string(target.join("pinchtab-api.md")).unwrap();
-    assert_eq!(content, "# API Reference\n");
-
-    let _ = fs::remove_dir_all(source_root);
     let _ = fs::remove_dir_all(shared_dir);
 }
 
 #[test]
-fn copy_skill_reference_files_is_noop_when_source_missing() {
-    let source_root = temp_dir("skill-ref-nosrc");
-    let shared_dir = temp_dir("skill-ref-noshared");
+fn discover_skills_includes_embedded_builtins() {
+    // Use non-existent dirs so only embedded skills are found.
+    let system = temp_dir("embed-sys");
+    let workspace = temp_dir("embed-ws");
 
-    // No source directory exists — should succeed silently.
-    super::copy_skill_reference_files(&source_root, &shared_dir)
-        .expect("missing source should not be an error");
+    let skills = crate::skills::discover_skills(&system, None, &workspace);
 
-    let _ = fs::remove_dir_all(source_root);
-    let _ = fs::remove_dir_all(shared_dir);
+    // Should discover the embedded BrowserAutomation skill.
+    assert!(
+        skills
+            .iter()
+            .any(|s| s.metadata.name == "browser-automation"),
+        "embedded browser-automation skill should be discovered; found: {:?}",
+        skills.iter().map(|s| &s.metadata.name).collect::<Vec<_>>()
+    );
+
+    let _ = fs::remove_dir_all(system);
+    let _ = fs::remove_dir_all(workspace);
 }
 
 #[test]
-fn copy_skill_reference_files_skips_folders_without_references() {
-    let source_root = temp_dir("skill-ref-no-refs");
-    // Create a skill folder without a references/ subdirectory.
-    let skill_dir = source_root
-        .join(super::SKILLS_SOURCE_DIR)
-        .join("SimpleSkill");
-    fs::create_dir_all(&skill_dir).unwrap();
-    fs::write(skill_dir.join("SKILL.md"), "---\nname: simple\n---\nBody.").unwrap();
+fn workspace_skill_overrides_embedded_builtin() {
+    let system = temp_dir("override-sys");
+    let workspace = temp_dir("override-ws");
 
-    let shared_dir = temp_dir("skill-ref-no-refs-shared");
+    // Create a workspace-level skill that overrides the embedded one.
+    let ws_skill_dir = workspace.join("skills/BrowserAutomation");
+    fs::create_dir_all(&ws_skill_dir).unwrap();
+    fs::write(
+        ws_skill_dir.join("SKILL.md"),
+        "---\nname: browser-automation\ndescription: Custom override\nrequires:\n  - shell_exec\nenv:\n  - PINCHTAB_URL\n---\nCustom override body.",
+    )
+    .unwrap();
 
-    super::copy_skill_reference_files(&source_root, &shared_dir)
-        .expect("should succeed with no references to copy");
+    let skills = crate::skills::discover_skills(&system, None, &workspace);
 
-    // The target directory for this skill should not exist.
-    let target = shared_dir.join(super::SKILL_REFS_DIR).join("SimpleSkill");
-    assert!(!target.exists());
+    let browser = skills
+        .iter()
+        .find(|s| s.metadata.name == "browser-automation")
+        .expect("browser-automation should exist");
+    assert!(
+        browser.content.contains("Custom override body"),
+        "workspace skill should override embedded; got: {}",
+        browser.content
+    );
 
-    let _ = fs::remove_dir_all(source_root);
-    let _ = fs::remove_dir_all(shared_dir);
+    let _ = fs::remove_dir_all(system);
+    let _ = fs::remove_dir_all(workspace);
 }
 
 #[test]

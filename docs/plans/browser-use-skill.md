@@ -842,6 +842,35 @@ readiness and `PINCHTAB_URL` presence.
 - Shell policy: `browser_shell_overlay_allows_browser_skill_commands`,
   `default_policy_rejects_browser_commands`
 
+**Additional fixes:**
+- **Embedded skills:** Built-in skills are now compiled into the oxydra-vm
+  binary via `rust-embed`. The skill loader uses embedded skills as the
+  lowest-priority tier — filesystem skills (system → user → workspace)
+  override embedded ones by name. This eliminates the need for Dockerfile
+  `COPY` or tarball bundling for skills. Works across all tiers (Container,
+  Process, MicroVM).
+- **Reference extraction:** At startup, oxydra-vm extracts embedded reference
+  files (e.g. `pinchtab-api.md`) to `<shared>/.oxydra/skills/` so the LLM
+  can `cat` them from the shell. The previous `copy_skill_reference_files()`
+  in the runner is removed — oxydra-vm is now self-contained for skill data.
+- **User overrides:** Users can override built-in skills by placing their own
+  `SKILL.md` at `~/.config/oxydra/skills/<SkillName>/SKILL.md` (user-level)
+  or `<workspace>/.oxydra/skills/<SkillName>/SKILL.md` (workspace-level).
+- **Logging:** Skill discovery and activation now log at `info` level:
+  discovered skills count/names, activation results, and specific reasons
+  for non-activation (missing tools, missing env vars). This makes it easy
+  to diagnose why a skill is not injected.
+
+**Additional tests (5 new):**
+- `embedded_skills_include_browser_automation`
+- `embedded_skills_found_with_empty_filesystem_dirs`
+- `filesystem_skill_overrides_embedded_builtin`
+- `extract_builtin_references_writes_to_shared_dir`
+- `extract_builtin_references_is_idempotent`
+- (In `tests.rs`): `extract_builtin_references_writes_embedded_reference_files`,
+  `discover_skills_includes_embedded_builtins`,
+  `workspace_skill_overrides_embedded_builtin`
+
 **Verification gate:** ✅ Browser automation skill is discovered from
 `config/skills/BrowserAutomation/SKILL.md`, activates when shell is ready and
 `PINCHTAB_URL` is set, renders with URL substitution, and appears in the system

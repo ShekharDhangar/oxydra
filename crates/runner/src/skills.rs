@@ -13,8 +13,16 @@ use std::path::{Path, PathBuf};
 
 use gray_matter::Matter;
 use gray_matter::engine::YAML;
+use rust_embed::Embed;
 use tools::ToolAvailability;
 use types::{RenderedSkill, Skill, SkillActivation, SkillMetadata};
+
+/// Built-in skills embedded at compile time from `config/skills/`.
+/// These serve as the lowest-priority tier — filesystem skills (system, user,
+/// workspace) override embedded ones by name.
+#[derive(Embed)]
+#[folder = "../../config/skills/"]
+struct BuiltinSkills;
 
 /// Maximum estimated token count for a single skill body.
 /// Estimated as `chars / 4`. Skills exceeding this are rejected.
@@ -43,17 +51,18 @@ const SKILL_FILE_NAME: &str = "SKILL.md";
 /// - **Bare file:** A `.md` file directly in the `skills/` directory (for
 ///   simple skills without reference files).
 ///
-/// Precedence (highest to lowest): `workspace_dir` → `user_dir` → `system_dir`.
-/// A skill with the same `name` at a higher-precedence tier replaces the
-/// lower-tier one entirely (no merging).
+/// Precedence (highest to lowest): `workspace_dir` → `user_dir` → `system_dir`
+/// → embedded built-ins. A skill with the same `name` at a higher-precedence
+/// tier replaces the lower-tier one entirely (no merging).
 pub fn discover_skills(
     system_dir: &Path,
     user_dir: Option<&Path>,
     workspace_dir: &Path,
 ) -> Vec<Skill> {
-    let mut skills_by_name: HashMap<String, Skill> = HashMap::new();
+    // Start with embedded built-in skills (lowest precedence).
+    let mut skills_by_name: HashMap<String, Skill> = discover_embedded_skills();
 
-    // System (lowest precedence) → user → workspace (highest precedence).
+    // System → user → workspace (each overriding lower tiers).
     let dirs: Vec<PathBuf> = [
         Some(system_dir.join(SKILLS_SUBDIR)),
         user_dir.map(|d| d.join(SKILLS_SUBDIR)),
@@ -63,11 +72,13 @@ pub fn discover_skills(
     .flatten()
     .collect();
 
-    for dir in dirs {
+    for dir in &dirs {
         if !dir.is_dir() {
+            tracing::debug!(path = %dir.display(), "skills directory does not exist, skipping");
             continue;
         }
-        let entries = match std::fs::read_dir(&dir) {
+        tracing::debug!(path = %dir.display(), "scanning skills directory");
+        let entries = match std::fs::read_dir(dir) {
             Ok(entries) => entries,
             Err(err) => {
                 tracing::warn!(path = %dir.display(), error = %err, "failed to read skills directory");
@@ -166,14 +177,28 @@ pub fn evaluate_activation<'a>(
                         .all(|var| env.contains_key(var));
 
                     if !tools_ready {
-                        tracing::debug!(
+                        let missing: Vec<_> = skill
+                            .metadata
+                            .requires
+                            .iter()
+                            .filter(|t| !is_tool_ready(t, availability))
+                            .collect();
+                        tracing::info!(
                             skill = %skill.metadata.name,
+                            missing_tools = %missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
                             "skill not activated: required tool(s) not ready"
                         );
                     }
                     if !env_present {
-                        tracing::debug!(
+                        let missing: Vec<_> = skill
+                            .metadata
+                            .env_vars
+                            .iter()
+                            .filter(|v| !env.contains_key(*v))
+                            .collect();
+                        tracing::info!(
                             skill = %skill.metadata.name,
+                            missing_env = %missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
                             "skill not activated: required env var(s) not set"
                         );
                     }
@@ -225,7 +250,21 @@ pub fn load_and_render_skills(
     env: &HashMap<String, String>,
 ) -> String {
     let skills = discover_skills(system_dir, user_dir, workspace_dir);
+    tracing::info!(
+        discovered = skills.len(),
+        names = %skills.iter().map(|s| s.metadata.name.as_str()).collect::<Vec<_>>().join(", "),
+        "skill discovery complete"
+    );
     let active = evaluate_activation(&skills, availability, env);
+    if active.is_empty() {
+        tracing::info!("no skills activated");
+    } else {
+        tracing::info!(
+            active_count = active.len(),
+            names = %active.iter().map(|s| s.metadata.name.as_str()).collect::<Vec<_>>().join(", "),
+            "skills activated"
+        );
+    }
     let rendered: Vec<RenderedSkill> = active.into_iter().map(|s| render_skill(s, env)).collect();
     format_skills_prompt(&rendered)
 }
@@ -233,6 +272,114 @@ pub fn load_and_render_skills(
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
+
+/// Discovers skills from the embedded `BuiltinSkills` directory.
+///
+/// Iterates over embedded files looking for `<FolderName>/SKILL.md` entries
+/// (folder-based skills) and bare `.md` files at the root level.
+fn discover_embedded_skills() -> HashMap<String, Skill> {
+    let mut skills = HashMap::new();
+
+    for path_str in BuiltinSkills::iter() {
+        let path = Path::new(path_str.as_ref());
+        let components: Vec<_> = path.components().collect();
+
+        let is_folder_skill =
+            components.len() == 2 && path.file_name().is_some_and(|f| f == SKILL_FILE_NAME);
+        let is_bare_skill = components.len() == 1
+            && path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+
+        if !is_folder_skill && !is_bare_skill {
+            continue;
+        }
+
+        let Some(file) = BuiltinSkills::get(path_str.as_ref()) else {
+            continue;
+        };
+        let content = String::from_utf8_lossy(&file.data);
+
+        match parse_skill_content(&content, path) {
+            Ok(skill) => {
+                let kind = if is_folder_skill {
+                    "folder-based"
+                } else {
+                    "bare"
+                };
+                tracing::debug!(
+                    name = %skill.metadata.name,
+                    kind,
+                    "discovered embedded skill"
+                );
+                skills.insert(skill.metadata.name.clone(), skill);
+            }
+            Err(err) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %err,
+                    "skipping invalid embedded skill file"
+                );
+            }
+        }
+    }
+
+    skills
+}
+
+/// Extracts embedded reference files to the shared directory so that the LLM
+/// can read them via shell commands (e.g. `cat /shared/.oxydra/skills/.../references/...`).
+///
+/// Only writes files that match `<SkillFolder>/references/*` in the embedded
+/// assets. Existing files at the target path are overwritten.
+pub fn extract_builtin_references(shared_dir: &Path) {
+    let target_base = shared_dir.join(".oxydra/skills");
+
+    for path_str in BuiltinSkills::iter() {
+        let path = Path::new(path_str.as_ref());
+        let components: Vec<_> = path.components().collect();
+
+        // Match pattern: <SkillFolder>/references/<filename> (3+ components).
+        let is_reference = components.len() >= 3
+            && components
+                .get(1)
+                .is_some_and(|c| c.as_os_str() == "references");
+
+        if !is_reference {
+            continue;
+        }
+
+        let Some(file) = BuiltinSkills::get(path_str.as_ref()) else {
+            continue;
+        };
+
+        let target_path = target_base.join(path.as_os_str());
+
+        if let Some(parent) = target_path.parent()
+            && let Err(err) = std::fs::create_dir_all(parent)
+        {
+            tracing::warn!(
+                path = %parent.display(),
+                error = %err,
+                "failed to create directory for skill reference"
+            );
+            continue;
+        }
+
+        if let Err(err) = std::fs::write(&target_path, &file.data) {
+            tracing::warn!(
+                path = %target_path.display(),
+                error = %err,
+                "failed to write skill reference file"
+            );
+        } else {
+            tracing::debug!(
+                path = %target_path.display(),
+                "extracted embedded skill reference"
+            );
+        }
+    }
+}
 
 /// Returns `true` if the path points to a `.md` file (case-insensitive).
 fn is_skill_file(path: &Path) -> bool {
@@ -263,14 +410,21 @@ fn is_tool_ready(tool_name: &str, availability: &ToolAvailability) -> bool {
 fn parse_skill_file(path: &Path) -> Result<Skill, SkillLoadError> {
     let raw =
         std::fs::read_to_string(path).map_err(|err| SkillLoadError::Io(path.to_path_buf(), err))?;
+    parse_skill_content(&raw, path)
+}
 
+/// Parse skill content from a string (used for both file-based and embedded skills).
+fn parse_skill_content(raw: &str, source_path: &Path) -> Result<Skill, SkillLoadError> {
     let matter = Matter::<YAML>::new();
     let parsed = matter
-        .parse::<SkillMetadata>(&raw)
-        .map_err(|err| SkillLoadError::Parse(path.to_path_buf(), err.to_string()))?;
+        .parse::<SkillMetadata>(raw)
+        .map_err(|err| SkillLoadError::Parse(source_path.to_path_buf(), err.to_string()))?;
 
     let metadata: SkillMetadata = parsed.data.ok_or_else(|| {
-        SkillLoadError::Parse(path.to_path_buf(), "missing YAML frontmatter".to_owned())
+        SkillLoadError::Parse(
+            source_path.to_path_buf(),
+            "missing YAML frontmatter".to_owned(),
+        )
     })?;
 
     let content = parsed.content;
@@ -279,7 +433,7 @@ fn parse_skill_file(path: &Path) -> Result<Skill, SkillLoadError> {
     let estimated_tokens = content.len() / CHARS_PER_TOKEN;
     if estimated_tokens > MAX_SKILL_TOKENS {
         return Err(SkillLoadError::TokenCap {
-            path: path.to_path_buf(),
+            path: source_path.to_path_buf(),
             estimated: estimated_tokens,
             max: MAX_SKILL_TOKENS,
         });
@@ -288,7 +442,7 @@ fn parse_skill_file(path: &Path) -> Result<Skill, SkillLoadError> {
     Ok(Skill {
         metadata,
         content,
-        source_path: path.to_path_buf(),
+        source_path: source_path.to_path_buf(),
     })
 }
 
@@ -560,8 +714,10 @@ Body.
 
         let ws = temp_dir("ws-empty");
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].metadata.name, "test-skill");
+        assert!(
+            skills.iter().any(|s| s.metadata.name == "test-skill"),
+            "should find the filesystem skill alongside embedded builtins"
+        );
     }
 
     #[test]
@@ -574,7 +730,13 @@ Body.
 
         let ws = temp_dir("ws-ignore");
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert!(skills.is_empty());
+        // Only embedded builtins (no filesystem .md skills added).
+        assert!(
+            !skills
+                .iter()
+                .any(|s| s.metadata.name == "readme" || s.metadata.name == "notes"),
+            "non-.md files should not be parsed as skills"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -593,8 +755,11 @@ Body.
         write_skill(ws.path(), "s.md", &ws_version);
 
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].metadata.description, "Workspace override");
+        let test_skill = skills
+            .iter()
+            .find(|s| s.metadata.name == "test-skill")
+            .expect("test-skill should exist");
+        assert_eq!(test_skill.metadata.description, "Workspace override");
     }
 
     #[test]
@@ -616,8 +781,11 @@ Body.
         );
 
         let skills = discover_skills(sys.path(), Some(usr.path()), ws.path());
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].metadata.description, "Workspace version");
+        let test_skill = skills
+            .iter()
+            .find(|s| s.metadata.name == "test-skill")
+            .expect("test-skill should exist");
+        assert_eq!(test_skill.metadata.description, "Workspace version");
     }
 
     #[test]
@@ -629,9 +797,18 @@ Body.
         write_skill(sys.path(), "always.md", ALWAYS_SKILL); // priority: 10
 
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert_eq!(skills.len(), 2);
-        assert_eq!(skills[0].metadata.name, "always-skill"); // 10 < 50
-        assert_eq!(skills[1].metadata.name, "test-skill");
+        // Verify ordering: always-skill (10) should come before test-skill (50).
+        let names: Vec<&str> = skills.iter().map(|s| s.metadata.name.as_str()).collect();
+        let always_pos = names.iter().position(|n| *n == "always-skill");
+        let test_pos = names.iter().position(|n| *n == "test-skill");
+        assert!(
+            always_pos.is_some() && test_pos.is_some(),
+            "both skills should be present; found: {names:?}"
+        );
+        assert!(
+            always_pos.unwrap() < test_pos.unwrap(),
+            "always-skill (priority 10) should come before test-skill (priority 50); order: {names:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -646,8 +823,10 @@ Body.
 
         let skills = discover_skills(tmp.path(), None, ws.path());
         let active = evaluate_activation(&skills, &unavailable_availability(), &HashMap::new());
-        assert_eq!(active.len(), 1);
-        assert_eq!(active[0].metadata.name, "always-skill");
+        assert!(
+            active.iter().any(|s| s.metadata.name == "always-skill"),
+            "always-skill should be active regardless of tool availability"
+        );
     }
 
     #[test]
@@ -658,7 +837,10 @@ Body.
 
         let skills = discover_skills(tmp.path(), None, ws.path());
         let active = evaluate_activation(&skills, &ready_availability(), &HashMap::new());
-        assert!(active.is_empty());
+        assert!(
+            !active.iter().any(|s| s.metadata.name == "manual-skill"),
+            "manual-skill should never be auto-activated"
+        );
     }
 
     #[test]
@@ -672,7 +854,10 @@ Body.
         env.insert("MY_URL".to_owned(), "http://localhost:9867".to_owned());
 
         let active = evaluate_activation(&skills, &ready_availability(), &env);
-        assert_eq!(active.len(), 1);
+        assert!(
+            active.iter().any(|s| s.metadata.name == "test-skill"),
+            "test-skill should activate when all conditions met"
+        );
     }
 
     #[test]
@@ -757,10 +942,14 @@ Browser content.
         let ws = temp_dir("ws-render");
 
         let skills = discover_skills(tmp.path(), None, ws.path());
+        let test_skill = skills
+            .iter()
+            .find(|s| s.metadata.name == "test-skill")
+            .expect("test-skill should exist");
         let mut env = HashMap::new();
         env.insert("MY_URL".to_owned(), "http://localhost:9867".to_owned());
 
-        let rendered = render_skill(&skills[0], &env);
+        let rendered = render_skill(test_skill, &env);
         assert!(rendered.content.contains("http://localhost:9867/api"));
         assert!(!rendered.content.contains("{{MY_URL}}"));
         assert_eq!(rendered.name, "test-skill");
@@ -774,8 +963,12 @@ Browser content.
         let ws = temp_dir("ws-render-unknown");
 
         let skills = discover_skills(tmp.path(), None, ws.path());
+        let test_skill = skills
+            .iter()
+            .find(|s| s.metadata.name == "test-skill")
+            .expect("test-skill should exist");
         // No env vars — {{MY_URL}} stays as-is.
-        let rendered = render_skill(&skills[0], &HashMap::new());
+        let rendered = render_skill(test_skill, &HashMap::new());
         assert!(rendered.content.contains("{{MY_URL}}"));
     }
 
@@ -914,8 +1107,12 @@ Use curl {{PINCHTAB_URL}}/api.
         );
 
         let active = evaluate_activation(&skills, &ready_availability(), &env);
-        assert_eq!(active.len(), 1);
-        assert_eq!(active[0].metadata.name, "browser-automation");
+        assert!(
+            active
+                .iter()
+                .any(|s| s.metadata.name == "browser-automation"),
+            "browser-automation should activate with shell ready + PINCHTAB_URL set"
+        );
     }
 
     /// A browser skill does NOT activate when `PINCHTAB_URL` is missing
@@ -1003,13 +1200,17 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
         let ws = temp_dir("ws-browser-render");
 
         let skills = discover_skills(tmp.path(), None, ws.path());
+        let browser_skill = skills
+            .iter()
+            .find(|s| s.metadata.name == "browser-automation")
+            .expect("browser-automation should exist");
         let mut env = HashMap::new();
         env.insert(
             "PINCHTAB_URL".to_owned(),
             "http://127.0.0.1:9867".to_owned(),
         );
 
-        let rendered = render_skill(&skills[0], &env);
+        let rendered = render_skill(browser_skill, &env);
         assert!(
             rendered.content.contains("http://127.0.0.1:9867/navigate"),
             "PINCHTAB_URL should be substituted"
@@ -1031,10 +1232,12 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
 
         let ws = temp_dir("folder-ws-empty");
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].metadata.name, "test-skill");
+        let test_skill = skills
+            .iter()
+            .find(|s| s.metadata.name == "test-skill")
+            .expect("test-skill should be discovered from folder");
         assert!(
-            skills[0]
+            test_skill
                 .source_path
                 .to_string_lossy()
                 .contains("MySkill/SKILL.md"),
@@ -1052,7 +1255,13 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
 
         let ws = temp_dir("folder-no-skill-ws");
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert!(skills.is_empty());
+        // Only embedded builtins should be present — not the empty folder.
+        assert!(
+            !skills
+                .iter()
+                .any(|s| s.source_path.to_string_lossy().contains("EmptyFolder")),
+            "empty folder should not produce a skill"
+        );
     }
 
     #[test]
@@ -1065,10 +1274,12 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
 
         let ws = temp_dir("folder-mixed-ws");
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert_eq!(skills.len(), 2);
         let names: Vec<&str> = skills.iter().map(|s| s.metadata.name.as_str()).collect();
-        assert!(names.contains(&"always-skill"));
-        assert!(names.contains(&"test-skill"));
+        assert!(
+            names.contains(&"always-skill"),
+            "should find folder-based skill"
+        );
+        assert!(names.contains(&"test-skill"), "should find bare-file skill");
     }
 
     #[test]
@@ -1082,8 +1293,11 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
         write_folder_skill(ws.path(), "BrowserAutomation", &ws_version);
 
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].metadata.description, "Workspace folder override");
+        let test_skill = skills
+            .iter()
+            .find(|s| s.metadata.name == "test-skill")
+            .expect("test-skill should exist from folder override");
+        assert_eq!(test_skill.metadata.description, "Workspace folder override");
     }
 
     #[test]
@@ -1098,8 +1312,11 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
         write_folder_skill(ws.path(), "TestSkill", &ws_version);
 
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].metadata.description, "Folder wins");
+        let test_skill = skills
+            .iter()
+            .find(|s| s.metadata.name == "test-skill")
+            .expect("test-skill should exist");
+        assert_eq!(test_skill.metadata.description, "Folder wins");
     }
 
     #[test]
@@ -1115,8 +1332,10 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
 
         let ws = temp_dir("folder-refs-ws");
         let skills = discover_skills(sys.path(), None, ws.path());
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].metadata.name, "test-skill");
+        assert!(
+            skills.iter().any(|s| s.metadata.name == "test-skill"),
+            "folder-based skill with references should be discovered"
+        );
 
         // Verify the references directory exists alongside the skill.
         let refs_dir = sys
@@ -1393,6 +1612,110 @@ Navigate: `curl {{PINCHTAB_URL}}/navigate`
         assert!(
             !prompt.contains("Browser Automation"),
             "prompt should NOT contain browser skill when PINCHTAB_URL is missing"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Embedded skill discovery + reference extraction
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn embedded_skills_include_browser_automation() {
+        let skills = discover_embedded_skills();
+        assert!(
+            skills.contains_key("browser-automation"),
+            "embedded skills should include browser-automation; found: {:?}",
+            skills.keys().collect::<Vec<_>>()
+        );
+
+        let skill = &skills["browser-automation"];
+        assert_eq!(skill.metadata.activation, SkillActivation::Auto);
+        assert_eq!(skill.metadata.requires, vec!["shell_exec"]);
+        assert_eq!(skill.metadata.env_vars, vec!["PINCHTAB_URL"]);
+    }
+
+    #[test]
+    fn embedded_skills_found_with_empty_filesystem_dirs() {
+        let sys = temp_dir("embed-empty-sys");
+        let ws = temp_dir("embed-empty-ws");
+
+        let skills = discover_skills(sys.path(), None, ws.path());
+        assert!(
+            skills
+                .iter()
+                .any(|s| s.metadata.name == "browser-automation"),
+            "embedded browser-automation should appear even with empty filesystem dirs"
+        );
+    }
+
+    #[test]
+    fn filesystem_skill_overrides_embedded_builtin() {
+        let sys = temp_dir("embed-override-sys");
+        let ws = temp_dir("embed-override-ws");
+
+        // Create a workspace-level skill with the same name as the embedded one.
+        let override_content = r#"---
+name: browser-automation
+description: Custom browser override
+activation: auto
+requires:
+  - shell_exec
+env:
+  - PINCHTAB_URL
+---
+
+Custom browser content for override test.
+"#;
+        write_folder_skill(ws.path(), "BrowserOverride", override_content);
+
+        let skills = discover_skills(sys.path(), None, ws.path());
+        let browser = skills
+            .iter()
+            .find(|s| s.metadata.name == "browser-automation")
+            .expect("browser-automation should exist");
+        assert!(
+            browser
+                .content
+                .contains("Custom browser content for override test"),
+            "workspace skill should override embedded; got: {}",
+            browser.content
+        );
+    }
+
+    #[test]
+    fn extract_builtin_references_writes_to_shared_dir() {
+        let shared = temp_dir("extract-shared");
+        extract_builtin_references(shared.path());
+
+        let ref_path = shared
+            .path()
+            .join(".oxydra/skills/BrowserAutomation/references/pinchtab-api.md");
+        assert!(
+            ref_path.is_file(),
+            "reference file should be extracted to {}",
+            ref_path.display()
+        );
+
+        let content = fs::read_to_string(&ref_path).unwrap();
+        assert!(
+            content.contains("Pinchtab"),
+            "extracted reference should contain Pinchtab API docs"
+        );
+    }
+
+    #[test]
+    fn extract_builtin_references_is_idempotent() {
+        let shared = temp_dir("extract-idempotent");
+
+        extract_builtin_references(shared.path());
+        extract_builtin_references(shared.path()); // second call
+
+        let ref_path = shared
+            .path()
+            .join(".oxydra/skills/BrowserAutomation/references/pinchtab-api.md");
+        assert!(
+            ref_path.is_file(),
+            "reference file should still exist after re-extraction"
         );
     }
 }
