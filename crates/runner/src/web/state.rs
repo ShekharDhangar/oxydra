@@ -206,8 +206,10 @@ mod tests {
     use types::RunnerGlobalConfig;
 
     fn make_state(bind: &str) -> WebState {
-        let mut global_config = RunnerGlobalConfig::default();
-        global_config.workspace_root = std::env::temp_dir().to_string_lossy().to_string();
+        let global_config = RunnerGlobalConfig {
+            workspace_root: std::env::temp_dir().to_string_lossy().to_string(),
+            ..Default::default()
+        };
         WebState::new(
             global_config,
             std::path::PathBuf::from("/tmp/config.toml"),
