@@ -9,6 +9,7 @@ mod provider;
 mod runner;
 mod scheduler;
 mod session;
+mod skill;
 mod tool;
 mod tracing;
 
@@ -73,5 +74,6 @@ pub use scheduler::{
     ScheduleRunStatus, ScheduleSearchFilters, ScheduleSearchResult, ScheduleStatus,
 };
 pub use session::{SessionRecord, SessionStore};
+pub use skill::{RenderedSkill, Skill, SkillActivation, SkillMetadata};
 pub use tool::{FunctionDecl, SafetyTier, Tool, ToolExecutionContext, ToolParameterSchema};
 pub use tracing::init_tracing;

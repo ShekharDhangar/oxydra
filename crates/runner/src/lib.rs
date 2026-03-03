@@ -49,6 +49,7 @@ mod backend;
 pub mod bootstrap;
 pub mod catalog;
 mod config_migration;
+pub mod skills;
 pub mod web;
 
 pub use bootstrap::{

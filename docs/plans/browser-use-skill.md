@@ -645,32 +645,34 @@ Both `Dockerfile` and `Dockerfile.prebuilt`:
 
 ## 6. Implementation Phases
 
-### Phase A: Skill System Foundation
+### Phase A: Skill System Foundation ✅
 
 **Goal:** A minimal, working skill system that can load markdown skills and
 inject them into the system prompt.
 
+**Status:** Complete
+
 **Scope:**
-1. Define `Skill`, `SkillActivation`, `SkillMetadata` types in `types`
-2. Add `gray_matter = "0.3.2"` dependency (to `runner` crate)
-3. Implement `SkillLoader` in `runner/src/skills.rs`:
-   - Parse YAML frontmatter from markdown files
-   - Scan skill directories (system/config → user → workspace)
-   - Deduplicate by name (workspace wins)
-   - Evaluate activation conditions using `ToolAvailability` (readiness, not
+1. ✅ Define `Skill`, `SkillActivation`, `SkillMetadata`, `RenderedSkill` types in `types/src/skill.rs`
+2. ✅ Add `gray_matter = "0.3"` dependency (to `runner` crate, with `yaml` feature)
+3. ✅ Implement skill loader in `runner/src/skills.rs`:
+   - ✅ Parse YAML frontmatter from markdown files
+   - ✅ Scan skill directories (system/config → user → workspace)
+   - ✅ Deduplicate by name (workspace wins)
+   - ✅ Evaluate activation conditions using `ToolAvailability` (readiness, not
      just registration) and env var presence
-   - Template substitution for `{{ENV_VAR}}` placeholders (non-sensitive
+   - ✅ Template substitution for `{{ENV_VAR}}` placeholders (non-sensitive
      values only — see Section 2.2)
-   - Token estimation and 3000-token cap enforcement
-4. Modify `build_system_prompt()` to accept and inject active skills
-5. Wire up: load skills at session start, pass to prompt builder
-6. Unit tests: frontmatter parsing, directory precedence, deduplication,
+   - ✅ Token estimation and 3000-token cap enforcement
+4. ✅ Modify `build_system_prompt()` to accept and inject active skills
+5. ✅ Wire up: load skills at session start, pass to prompt builder
+6. ✅ Unit tests (28 total): frontmatter parsing, directory precedence, deduplication,
    activation evaluation (including readiness checks), template rendering,
-   token cap
-7. **Test: skill activation does NOT occur when shell is registered but
+   token cap, prompt injection
+7. ✅ **Test: skill activation does NOT occur when shell is registered but
    unavailable** (e.g., `ToolAvailability.shell` is `Unavailable`)
 
-**Verification gate:** Skills discovered from config directory, activated based
+**Verification gate:** ✅ Skills discovered from config directory, activated based
 on conditions (including tool readiness), rendered with env vars, injected into
 system prompt. Token cap enforced.
 
