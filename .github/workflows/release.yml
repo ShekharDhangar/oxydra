@@ -390,8 +390,8 @@ jobs:
           {
             echo "## Build and install instructions"
             echo
-            echo "- Build from source/local Docker images: https://github.com/${GITHUB_REPOSITORY}/blob/${CURRENT_TAG}/README.md#part-3--use-latest-from-repository-and-contribute"
-            echo "- Install from GitHub releases + GHCR: https://github.com/${GITHUB_REPOSITORY}/blob/${CURRENT_TAG}/README.md#part-2--quick-start-install-from-releases"
+            echo "- Build from source/local Docker images: https://github.com/${GITHUB_REPOSITORY}/blob/${CURRENT_TAG}/README.md#use-latest-from-repository-and-contribute"
+            echo "- Install from GitHub releases + GHCR: https://github.com/${GITHUB_REPOSITORY}/blob/${CURRENT_TAG}/README.md#quick-start"
             echo
             if [[ -n "${AI_RESPONSE_FILE}" && -f "${AI_RESPONSE_FILE}" && -s "${AI_RESPONSE_FILE}" ]]; then
               echo "## What's Changed"
