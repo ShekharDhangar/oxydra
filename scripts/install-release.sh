@@ -682,7 +682,7 @@ create_backup() {
       local _ws_from_cfg
       _ws_from_cfg="$(sed -nE 's/^[[:space:]]*workspace_root[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$RUNNER_CONFIG" | head -n 1 || true)"
       if [[ -n "$_ws_from_cfg" && "$_ws_from_cfg" != /* ]]; then
-        _ws_subdir="$_ws_from_cfg"
+        _ws_subdir="$(basename "$_ws_from_cfg")"
       fi
     fi
     local _backup_config_dir="${BACKUP_PATH}/config/.oxydra"
