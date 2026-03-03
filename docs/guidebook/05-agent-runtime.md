@@ -148,7 +148,7 @@ When a tool call fails — whether from JSON validation, argument type mismatch,
 
 ### Turn Budget
 
-`max_turns` (default 8) limits the number of loop iterations. When exceeded, the runtime returns `RuntimeError::BudgetExceeded`.
+`max_turns` (default 100) limits the number of loop iterations. When exceeded, the runtime returns `RuntimeError::BudgetExceeded`.
 
 ### Cost Budget
 

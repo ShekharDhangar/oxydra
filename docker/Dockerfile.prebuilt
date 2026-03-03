@@ -29,7 +29,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # essentials
     ca-certificates \
     curl \
-    wget \
     # shell & scripting
     bash \
     jq \
@@ -53,11 +52,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # process tools
     procps \
     lsof \
-    htop \
     # build basics (agents often need to compile/run things)
     make \
     gcc \
     # Browser
+    libnss3 \
+    fonts-liberation \
     chromium \
     && rm -rf /var/lib/apt/lists/*
 

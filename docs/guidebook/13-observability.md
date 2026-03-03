@@ -1,13 +1,13 @@
 # Chapter 13: Observability
 
-> **Status:** Planned
+> **Status:** On Hold
 > **Implemented:** `tracing` instrumentation throughout all crates (spans, structured events)
-> **Remaining:** OpenTelemetry OTLP export, distributed traces, metrics pipeline, cost reporting, dashboard templates
+> **Remaining:** OpenTelemetry OTLP export, distributed traces, metrics pipeline, cost reporting, dashboard templates (deferred pending product need)
 > **Last verified against code:** 2026-02-28
 
 ## Overview
 
-Oxydra is instrumented with `tracing` from the foundation layer upward. Every provider call, tool execution, turn transition, and gateway routing decision emits structured spans and events. This chapter describes the current instrumentation baseline and the planned upgrade to full OpenTelemetry export with distributed traces, metrics, and cost reporting.
+Oxydra is instrumented with `tracing` from the foundation layer upward. Every provider call, tool execution, turn transition, and gateway routing decision emits structured spans and events. This chapter describes the current instrumentation baseline and the deferred upgrade path to full OpenTelemetry export with distributed traces, metrics, and cost reporting.
 
 ## Current Instrumentation
 

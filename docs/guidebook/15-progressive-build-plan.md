@@ -23,7 +23,7 @@ This chapter tracks the implementation status of all 21 phases, documents identi
 | 13 | Model catalog + provider registry | **Complete** | Provider registry, Gemini, Responses, catalog commands, caps overrides, cached catalog resolution, `skip_catalog_validation` escape hatch, updated CLI (`fetch --pinned`, unfiltered cache) |
 | 14 | External channels + identity mapping | **Complete** | Telegram adapter, sender auth/audit, durable channel session mapping, forum-topic threading, and edit-message streaming are implemented. |
 | 15 | Multi-agent orchestration | In Progress | Agent definitions, delegation primitives, agent-specific model routing, and gateway concurrency/session eviction are implemented; advanced orchestration graph features remain. |
-| 16 | Observability (OpenTelemetry) | Planned | |
+| 16 | Observability (OpenTelemetry) | On Hold | Deferred pending product need |
 | 17 | MCP support | Planned | |
 | 18 | Session lifecycle controls | **Complete** | |
 | 19 | Scheduler system | **Complete** | Durable store, polling executor, 4 LLM tools, conditional notification, cron/interval/once cadences |
@@ -289,12 +289,12 @@ Built a complete durable scheduler that lets the LLM create and manage one-off a
 
 **Verification gate:** One agent delegates to a subagent successfully; lane-based queueing works under concurrent multi-channel load.
 
-### Phase 16: Observability (OpenTelemetry)
+### Phase 16: Observability (OpenTelemetry) — On Hold
 
 **Crates:** `runtime`, `gateway`
 **Builds on:** Phases 5, 15
 
-**Scope:**
+**Scope (deferred):**
 - Swap `tracing-subscriber` for `tracing-opentelemetry` OTLP exporter
 - Distributed traces: turn → provider_call → tool_execution span tree
 - Metrics: turn duration, token consumption, cost attribution, tool reliability

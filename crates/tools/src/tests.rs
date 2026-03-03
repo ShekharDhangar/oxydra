@@ -569,7 +569,7 @@ async fn registry_denies_shell_commands_not_in_allowlist() {
     let denied = registry
         .execute(
             SHELL_EXEC_TOOL_NAME,
-            r#"{"command":"curl https://example.com"}"#,
+            r#"{"command":"wget https://example.com"}"#,
         )
         .await
         .expect_err("security policy should deny shell commands outside allowlist");

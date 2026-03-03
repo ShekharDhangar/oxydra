@@ -104,23 +104,23 @@ If a path fails any check, the tool call is blocked with `SecurityPolicyViolatio
 
 Shell commands are validated in two stages:
 
-**Syntax scrubbing** — by default, commands containing these operators are rejected:
+**Syntax scrubbing** — when `allow_operators = false`, commands containing these operators are rejected:
 - `&&`, `||`, `;` (command chaining)
 - `|` (pipes)
 - `>`, `<` (redirection)
 - `$()`, backticks (subshell expansion)
 - Newlines (multi-line commands)
 
-This can be relaxed by setting `allow_operators = true` in the shell config (see below).
+The shell config controls this behavior via `allow_operators` (default: `true`).
 
-**Executable allowlist** — a built-in set of common commands is permitted by default:
+**Executable allowlist fallback** — if no config overrides are applied, a built-in set of commands is permitted:
 ```
-awk, cat, cargo, cp, cut, echo, env, find, git, go, grep, head,
-ls, mkdir, mv, node, printf, pwd, python, python3, rustc, sed,
+awk, cat, cargo, cp, curl, cut, echo, env, find, git, go, grep,
+head, jq, ls, mkdir, mv, node, printf, pwd, python, python3, rustc, sed,
 sort, stat, tail, touch, tr, uniq, wc, which
 ```
 
-Any command not matching the allowlist or containing blocked syntax is rejected before execution.
+Any command not matching the allowlist is rejected before execution. Operator syntax is additionally rejected when `allow_operators = false`.
 
 #### Configurable Shell Allowlist
 
@@ -128,10 +128,10 @@ The default allowlist can be extended or replaced via `[tools.shell]` in `agent.
 
 ```toml
 [tools.shell]
-allow = ["npm", "npx", "curl", "docker", "rg"]   # Add to defaults
+allow = ["*"]                                         # Default (all commands)
 deny = ["rm"]                                       # Remove from defaults
 # replace_defaults = false                          # If true, only `allow` commands are permitted
-# allow_operators = false                           # If true, shell operators are allowed
+# allow_operators = true                            # Default: shell operators are allowed
 ```
 
 - **`allow`** — commands or glob patterns to add. Supports `*` as prefix/suffix: `cargo-*` matches `cargo-fmt`, `*test*` matches `pytest`.

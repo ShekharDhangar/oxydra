@@ -747,9 +747,9 @@ async fn run_session_for_session_with_stream_events_forwards_provider_deltas() {
         vec![
             StreamItem::Progress(RuntimeProgressEvent {
                 kind: RuntimeProgressKind::ProviderCall,
-                message: "[1/8] Calling provider".to_owned(),
+                message: "[1/100] Calling provider".to_owned(),
                 turn: 1,
-                max_turns: 8,
+                max_turns: 100,
             }),
             StreamItem::Text("hello".to_owned()),
             StreamItem::FinishReason("stop".to_owned()),
@@ -3011,7 +3011,7 @@ fn assistant_response(content: &str, tool_calls: Vec<ToolCall>) -> Response {
 fn runtime_limits_default_matches_turn_guard_baseline() {
     let limits = RuntimeLimits::default();
     assert_eq!(limits.turn_timeout, Duration::from_secs(60));
-    assert_eq!(limits.max_turns, 8);
+    assert_eq!(limits.max_turns, 100);
     assert_eq!(limits.max_cost, None);
     assert_eq!(limits.context_budget.trigger_ratio, 0.85);
     assert_eq!(limits.context_budget.safety_buffer_tokens, 1_024);

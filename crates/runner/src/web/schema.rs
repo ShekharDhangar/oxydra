@@ -680,7 +680,7 @@ fn agent_runtime_section() -> SchemaSection {
             },
             SchemaField {
                 description: Some("Maximum agentic loop iterations per session".into()),
-                default: Some(Value::Number(8.into())),
+                default: Some(Value::Number(100.into())),
                 constraints: range(Some(1.0), None, None),
                 ..fld("runtime.max_turns", "Max Turns", "number")
             },
@@ -1028,8 +1028,8 @@ fn agent_tools_web_search_section() -> SchemaSection {
 fn agent_tools_shell_section() -> SchemaSection {
     SchemaSection {
         description: Some(
-            "Shell command execution security policy. The shell tool is always available — \
-             these settings customize the command allowlist and behavior."
+            "Shell command execution security policy. The default config allows all \
+             commands (`*`) and operators; use this section to restrict or customize it."
                 .into(),
         ),
         group: Some("tools".into()),
@@ -1044,6 +1044,7 @@ fn agent_tools_shell_section() -> SchemaSection {
                         .into(),
                 ),
                 nullable: true,
+                default: Some(serde_json::json!(["*"])),
                 ..fld("tools.shell.allow", "Allow Commands", "tag_list")
             },
             SchemaField {
@@ -1070,7 +1071,7 @@ fn agent_tools_shell_section() -> SchemaSection {
             SchemaField {
                 description: Some("Allow shell control operators (&&, ||, |, etc.)".into()),
                 nullable: true,
-                default: Some(Value::Bool(false)),
+                default: Some(Value::Bool(true)),
                 ..fld(
                     "tools.shell.allow_operators",
                     "Allow Shell Operators",

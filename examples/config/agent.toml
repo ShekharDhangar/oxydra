@@ -62,7 +62,7 @@ model    = "gpt-4o-mini"
 # --- Runtime limits ---
 [runtime]
 turn_timeout_secs = 60   # Max seconds per LLM call
-max_turns         = 25    # Max agentic loop iterations
+max_turns         = 100   # Max agentic loop iterations
 # max_cost        = 1000.0  # Optional cumulative cost cap (provider-reported units)
 
 # Context window management — triggers summarization when usage exceeds trigger_ratio.
@@ -163,13 +163,14 @@ jitter          = false # Add randomized jitter to backoff
 
 # --- Shell command allowlist ---
 # Configure which commands the LLM is allowed to execute via shell_exec.
-# By default, a built-in allowlist of ~30 common commands is used.
+# By default, all commands are allowed (`allow = ["*"]`) and operators are enabled.
+# Set [tools.shell] explicitly to lock this down.
 
 # [tools.shell]
-# allow = ["npm", "npx", "curl", "wget", "jq", "make", "docker", "rg"]  # Add to defaults
-# deny = ["rm"]                      # Remove from defaults
-# replace_defaults = false           # If true, `allow` replaces the default list entirely
-# allow_operators = false            # If true, allow shell operators (&&, ||, |, etc.)
+# allow = ["*"]                      # Default: allow all commands (supports globs)
+# deny = ["rm"]                      # Optional blocklist entries
+# replace_defaults = false            # If true, `allow` replaces the built-in fallback list entirely
+# allow_operators = true              # Default: allow shell operators (&&, ||, |, etc.)
 # env_keys = ["NPM_TOKEN", "GH_TOKEN"]  # Env vars to forward into the shell container
 # Note: API keys from the agent config are NOT forwarded to the shell.
 # Use env_keys for shell-specific secrets. CLI --env entries prefixed

@@ -25,7 +25,7 @@ Internal engineering documentation for the Oxydra AI agent orchestrator. This gu
 |---|---------|-------------|
 | 11 | [Multi-Agent Orchestration](11-multi-agent-orchestration.md) | In progress: subagent delegation and routing foundations are implemented; advanced orchestration graphs/session trees remain |
 | 12 | [External Channels and Identity](12-external-channels-and-identity.md) | Implemented: external channel adapters, sender authentication, and durable session identity mapping |
-| 13 | [Observability](13-observability.md) | OpenTelemetry traces, metrics, cost reporting, conversation replay |
+| 13 | [Observability](13-observability.md) | On hold: OpenTelemetry traces, metrics, cost reporting, conversation replay |
 | 14 | [Productization](14-productization.md) | Mixed: model catalog governance, session lifecycle, scheduler, and **skill system (including browser automation)** are implemented; MCP/persona remain planned |
 
 ### Reference
@@ -77,7 +77,7 @@ Add the following step before any `cargo build` or `cargo test` step:
 ## Conventions
 
 - **Chapters 1-10** describe the system as built. Code references point to actual implementations.
-- **Chapters 11-14** are mixed-status chapters: Chapter 12 and parts of Chapters 11/14 are implemented, while Chapters 13 and remaining sections are forward-looking. Each of these chapters has a **status header** at the top indicating what is implemented vs. remaining.
+- **Chapters 11-14** are mixed-status chapters: Chapter 12 and parts of Chapters 11/14 are implemented, while Chapter 13 is currently on hold and remaining sections are forward-looking. Each of these chapters has a **status header** at the top indicating what is implemented vs. remaining.
 - **Chapter 15** tracks the phase-by-phase completion status, in-progress work, and open gaps.
 - **Status headers** — Mixed/planned chapters include a status block at the top with implementation status, last-verified date, and known gaps. When updating these chapters, keep the status header current.
 

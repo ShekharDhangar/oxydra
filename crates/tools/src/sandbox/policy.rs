@@ -100,7 +100,7 @@ impl WorkspaceSecurityPolicy {
             denied_roots: canonicalize_roots(denied_roots),
             shell_command_allowlist: default_shell_command_allowlist(),
             shell_command_allow_globs: Vec::new(),
-            allow_shell_operators: false,
+            allow_shell_operators: true,
         }
     }
 
@@ -148,7 +148,7 @@ impl WorkspaceSecurityPolicy {
             }
         }
 
-        self.allow_shell_operators = config.allow_operators.unwrap_or(false);
+        self.allow_shell_operators = config.allow_operators.unwrap_or(true);
         self
     }
 
@@ -440,9 +440,9 @@ fn contains_disallowed_shell_syntax(command: &str) -> bool {
 
 fn default_shell_command_allowlist() -> BTreeSet<String> {
     [
-        "awk", "cat", "cargo", "cp", "cut", "echo", "env", "find", "git", "go", "grep", "head",
-        "ls", "mkdir", "mv", "node", "printf", "pwd", "python", "python3", "rustc", "sed", "sort",
-        "stat", "tail", "touch", "tr", "uniq", "wc", "which",
+        "awk", "cat", "cargo", "cp", "curl", "cut", "echo", "env", "find", "git", "go", "grep",
+        "head", "jq", "ls", "mkdir", "mv", "node", "printf", "pwd", "python", "python3", "rustc",
+        "sed", "sleep", "sort", "stat", "tail", "touch", "tr", "uniq", "wc", "which",
     ]
     .into_iter()
     .map(str::to_owned)
@@ -535,7 +535,7 @@ mod tests {
         let deny = policy.enforce(
             "shell_exec",
             SafetyTier::Privileged,
-            &json!({ "command": "curl https://example.com" }),
+            &json!({ "command": "wget https://example.com" }),
         );
         assert!(matches!(
             deny,
@@ -551,7 +551,14 @@ mod tests {
     #[test]
     fn shell_policy_rejects_control_operators() {
         let workspace = unique_temp_workspace("policy-shell-ops");
-        let policy = WorkspaceSecurityPolicy::for_bootstrap_workspace(&workspace);
+        let policy = WorkspaceSecurityPolicy::for_bootstrap_workspace(&workspace)
+            .with_shell_config(Some(&ShellConfig {
+                allow: None,
+                deny: None,
+                replace_defaults: None,
+                allow_operators: Some(false),
+                env_keys: None,
+            }));
 
         let deny = policy.enforce(
             "shell_exec",
@@ -927,8 +934,8 @@ mod tests {
             &json!({"command": "ls && pwd"}),
         );
         assert!(
-            result.is_err(),
-            "operators should be denied with None config"
+            result.is_ok(),
+            "operators should be allowed with None config"
         );
 
         let _ = fs::remove_dir_all(workspace);
@@ -1038,10 +1045,10 @@ mod tests {
         let _ = fs::remove_dir_all(workspace);
     }
 
-    /// Without the browser overlay, curl/jq/sleep and operators should be
-    /// rejected by the default shell policy.
+    /// The default shell policy should include curl/jq and shell operators, but
+    /// should still reject commands not in the built-in allowlist.
     #[test]
-    fn default_policy_rejects_browser_commands() {
+    fn default_policy_includes_browser_primitives_but_rejects_unknown_commands() {
         let workspace = unique_temp_workspace("no-browser-overlay");
         let policy =
             WorkspaceSecurityPolicy::for_bootstrap_workspace(&workspace).with_shell_config(None);
@@ -1051,19 +1058,23 @@ mod tests {
             SafetyTier::SideEffecting,
             &json!({"command": "curl http://127.0.0.1:9867/navigate"}),
         );
-        assert!(
-            result.is_err(),
-            "curl should be blocked without browser overlay"
-        );
+        assert!(result.is_ok(), "curl should be allowed by default policy");
 
         let result = policy.enforce(
             "shell_exec",
             SafetyTier::SideEffecting,
             &json!({"command": "jq '.tabId'"}),
         );
+        assert!(result.is_ok(), "jq should be allowed by default policy");
+
+        let result = policy.enforce(
+            "shell_exec",
+            SafetyTier::SideEffecting,
+            &json!({"command": "curl -s http://127.0.0.1:9867/navigate && jq '.tabId' /shared/out.json"}),
+        );
         assert!(
-            result.is_err(),
-            "jq should be blocked without browser overlay"
+            result.is_ok(),
+            "operators should be allowed by default policy"
         );
 
         let result = policy.enforce(
@@ -1071,9 +1082,16 @@ mod tests {
             SafetyTier::SideEffecting,
             &json!({"command": "sleep 3"}),
         );
+        assert!(result.is_ok(), "sleep should be allowed by default policy");
+
+        let result = policy.enforce(
+            "shell_exec",
+            SafetyTier::SideEffecting,
+            &json!({"command": "wget http://example.com"}),
+        );
         assert!(
             result.is_err(),
-            "sleep should be blocked without browser overlay"
+            "wget should remain blocked without explicit allow"
         );
 
         let _ = fs::remove_dir_all(workspace);

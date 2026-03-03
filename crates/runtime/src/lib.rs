@@ -111,7 +111,7 @@ impl Default for RuntimeLimits {
     fn default() -> Self {
         Self {
             turn_timeout: Duration::from_secs(60),
-            max_turns: 8,
+            max_turns: 100,
             max_cost: None,
             context_budget: ContextBudgetLimits {
                 trigger_ratio: 0.85,

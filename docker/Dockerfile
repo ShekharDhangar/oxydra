@@ -20,6 +20,7 @@ RUN case "$(uname -m)" in \
 
 RUN rustup target add wasm32-wasip1 "$(cat /tmp/rust-target)"
 RUN cargo zigbuild --release --target "$(cat /tmp/rust-target)" --bin oxydra-vm --bin shell-daemon
+RUN strip /build/target/*/release/oxydra-vm /build/target/*/release/shell-daemon || true
 
 # --- oxydra-vm image ---
 FROM alpine:3 AS oxydra-vm
@@ -37,6 +38,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     jq \
+    libnss3 \
+    fonts-liberation \
     chromium \
     && rm -rf /var/lib/apt/lists/*
 

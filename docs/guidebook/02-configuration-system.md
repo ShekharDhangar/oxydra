@@ -65,7 +65,7 @@ Controls the agent loop's operational limits:
 
 | Field | Default | Purpose |
 |-------|---------|---------|
-| `max_turns` | 8 | Maximum tool-calling iterations per session turn |
+| `max_turns` | 100 | Maximum tool-calling iterations per session turn |
 | `turn_timeout_secs` | 60 | Per-turn timeout in seconds |
 | `max_cost` | (none) | Optional cost budget per session |
 | `context_budget` | (nested) | Context window management (trigger ratio, safety buffer, fallback max tokens) |
@@ -322,17 +322,17 @@ pub struct ShellConfig {
     pub allow: Option<Vec<String>>,       // Commands to add (supports glob patterns)
     pub deny: Option<Vec<String>>,        // Commands to remove (supports glob patterns)
     pub replace_defaults: Option<bool>,   // Replace default allowlist entirely (default: false)
-    pub allow_operators: Option<bool>,    // Allow shell operators &&, ||, | etc. (default: false)
+    pub allow_operators: Option<bool>,    // Allow shell operators &&, ||, | etc. (default: true)
     pub env_keys: Option<Vec<String>>,    // Env var names to forward into the shell container
 }
 ```
 
 | Field | Default | Purpose |
 |-------|---------|---------|
-| `allow` | (none) | Additional commands or glob patterns (e.g., `npm*`, `cargo-*`) to add to the allowlist |
+| `allow` | `[*]` | Commands or glob patterns allowed to execute (`*` = all commands) |
 | `deny` | (none) | Commands or glob patterns to remove from the allowlist |
 | `replace_defaults` | `false` | If `true`, `allow` replaces the built-in defaults entirely |
-| `allow_operators` | `false` | If `true`, shell operators (`&&`, `\|\|`, `\|`, `;`, `>`, `<`, etc.) are permitted |
+| `allow_operators` | `true` | If `true`, shell operators (`&&`, `\|\|`, `\|`, `;`, `>`, `<`, etc.) are permitted |
 | `env_keys` | (none) | Environment variable names to forward into the shell-vm container. API keys from the agent config are **not** forwarded to the shell by default — only keys listed here are. Additionally, CLI `--env` / `--env-file` entries with a `SHELL_` prefix are forwarded with the prefix stripped (e.g. `SHELL_NPM_TOKEN` → `NPM_TOKEN`). |
 
 Glob patterns support `*` as prefix, suffix, or both: `npm*` matches `npm`, `npmrc`; `*test*` matches `pytest`, `testing`.
@@ -566,10 +566,10 @@ provider_type = "anthropic"
 # --- Shell command allowlist ---
 
 # [tools.shell]
-# allow = ["npm", "npx", "curl", "wget", "jq", "make", "docker", "rg"]
+# allow = ["*"]
 # deny = ["rm"]
 # replace_defaults = false
-# allow_operators = false
+# allow_operators = true
 # env_keys = ["NPM_TOKEN", "GH_TOKEN"]  # Forward these env vars into the shell container
 
 # --- Scheduler ---

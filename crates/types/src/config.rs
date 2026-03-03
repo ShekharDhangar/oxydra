@@ -629,7 +629,7 @@ pub struct CatalogConfig {
 /// Provides structured alternatives to `OXYDRA_WEB_SEARCH_*` environment
 /// variables. Values set here are applied as env vars at bootstrap time,
 /// but explicit env vars always take precedence.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web_search: Option<WebSearchConfig>,
@@ -637,6 +637,16 @@ pub struct ToolsConfig {
     pub shell: Option<ShellConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment_save: Option<AttachmentSaveConfig>,
+}
+
+impl Default for ToolsConfig {
+    fn default() -> Self {
+        Self {
+            web_search: None,
+            shell: Some(ShellConfig::default()),
+            attachment_save: None,
+        }
+    }
 }
 
 /// Configuration for the `attachment_save` tool.
@@ -662,10 +672,10 @@ fn default_attachment_save_timeout_secs() -> u64 {
 /// Shell tool security policy configuration.
 ///
 /// Controls which commands the LLM is allowed to execute via `shell_exec`.
-/// By default a built-in allowlist is used; `allow` extends and `deny`
-/// removes entries from it. Set `replace_defaults = true` to ignore the
-/// built-in list entirely.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// The default config uses `allow = ["*"]` for an unrestricted out-of-box
+/// experience; operators are also enabled by default. Set `replace_defaults =
+/// true` plus an explicit `allow` list to lock the policy down.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShellConfig {
     /// Additional commands to add to the allowlist.
     /// Supports glob patterns (e.g., `"npm*"`, `"cargo-*"`).
@@ -680,7 +690,7 @@ pub struct ShellConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replace_defaults: Option<bool>,
     /// If `true`, allow shell control operators (`&&`, `||`, `|`, etc.).
-    /// Default: `false`.
+    /// Default: `true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_operators: Option<bool>,
     /// Environment variable names to forward into the shell container.
@@ -696,6 +706,18 @@ pub struct ShellConfig {
     /// (e.g. `SHELL_NPM_TOKEN` becomes `NPM_TOKEN`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env_keys: Option<Vec<String>>,
+}
+
+impl Default for ShellConfig {
+    fn default() -> Self {
+        Self {
+            allow: Some(vec!["*".to_owned()]),
+            deny: None,
+            replace_defaults: Some(false),
+            allow_operators: Some(true),
+            env_keys: None,
+        }
+    }
 }
 
 /// Web search provider configuration.
@@ -995,7 +1017,7 @@ fn default_summarization_min_turns() -> usize {
 }
 
 fn default_max_turns() -> usize {
-    8
+    100
 }
 
 fn default_memory_embedding_backend() -> MemoryEmbeddingBackend {
@@ -1219,9 +1241,19 @@ mod tests {
 
     #[test]
     fn default_agent_config_validates_successfully() {
-        AgentConfig::default()
-            .validate()
-            .expect("default config should validate");
+        let config = AgentConfig::default();
+        config.validate().expect("default config should validate");
+        assert_eq!(config.runtime.max_turns, 100);
+        assert_eq!(
+            config.tools.shell,
+            Some(ShellConfig {
+                allow: Some(vec!["*".to_owned()]),
+                deny: None,
+                replace_defaults: Some(false),
+                allow_operators: Some(true),
+                env_keys: None,
+            })
+        );
     }
 
     #[test]
