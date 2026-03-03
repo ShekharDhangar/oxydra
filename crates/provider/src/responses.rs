@@ -200,7 +200,13 @@ impl Provider for ResponsesProvider {
     ) -> Result<ProviderStream, ProviderError> {
         self.validate_context(context)?;
 
-        let mut request = self.build_request(context)?;
+        let previous_response_id = self.previous_response_id.lock().unwrap().clone();
+        let last_input_count = *self.last_input_count.lock().unwrap();
+        let mut request = ResponsesApiRequest::from_stream_context(
+            context,
+            previous_response_id,
+            last_input_count,
+        )?;
         let mut attempted_with_chaining = request.previous_response_id.is_some();
 
         let http_response = loop {
@@ -233,7 +239,7 @@ impl Provider for ResponsesProvider {
 
             if attempted_with_chaining && (400..500).contains(&status) {
                 self.reset_chaining_state();
-                request = ResponsesApiRequest::from_context(context, None, 0)?;
+                request = ResponsesApiRequest::from_stream_context(context, None, 0)?;
                 attempted_with_chaining = false;
                 continue;
             }
@@ -316,7 +322,7 @@ impl Provider for ResponsesProvider {
                 }
             };
 
-            let _ = process_responses_events(
+            let stream_finished = process_responses_events(
                 &events,
                 &sender,
                 &provider,
@@ -326,6 +332,13 @@ impl Provider for ResponsesProvider {
                 message_count,
             )
             .await;
+            if !stream_finished {
+                let _ = sender
+                    .send(Ok(StreamItem::ConnectionLost(
+                        "Responses stream ended before response.completed".to_owned(),
+                    )))
+                    .await;
+            }
         });
 
         Ok(receiver)
@@ -400,6 +413,23 @@ impl ResponsesApiRequest {
         context: &Context,
         previous_response_id: Option<String>,
         last_input_count: usize,
+    ) -> Result<Self, ProviderError> {
+        Self::from_context_with_stream(context, previous_response_id, last_input_count, false)
+    }
+
+    pub(crate) fn from_stream_context(
+        context: &Context,
+        previous_response_id: Option<String>,
+        last_input_count: usize,
+    ) -> Result<Self, ProviderError> {
+        Self::from_context_with_stream(context, previous_response_id, last_input_count, true)
+    }
+
+    fn from_context_with_stream(
+        context: &Context,
+        previous_response_id: Option<String>,
+        last_input_count: usize,
+        stream: bool,
     ) -> Result<Self, ProviderError> {
         let mut system_instructions = Vec::new();
         let mut input = Vec::new();
@@ -501,7 +531,7 @@ impl ResponsesApiRequest {
             instructions,
             tools,
             store: true,
-            stream: false,
+            stream,
         })
     }
 }
@@ -778,6 +808,8 @@ pub(crate) enum ResponsesEventAction {
 pub(crate) struct ResponsesToolCallAccumulator {
     output_index_to_call: BTreeMap<u32, ToolCallState>,
     next_ordinal: u32,
+    streamed_argument_deltas: bool,
+    streamed_text_deltas: bool,
 }
 
 #[derive(Debug, Default)]
@@ -833,6 +865,7 @@ impl ResponsesToolCallAccumulator {
                 .ordinal = Some(next);
         }
 
+        self.streamed_argument_deltas = true;
         let entry = self.output_index_to_call.get_mut(&output_index).unwrap();
         entry.arguments.push_str(delta);
         let ordinal = entry.ordinal.unwrap() as usize;
@@ -850,8 +883,16 @@ impl ResponsesToolCallAccumulator {
         }))
     }
 
+    fn mark_text_delta(&mut self) {
+        self.streamed_text_deltas = true;
+    }
+
+    fn has_streamed_text(&self) -> bool {
+        self.streamed_text_deltas
+    }
+
     fn has_streamed_tool_calls(&self) -> bool {
-        !self.output_index_to_call.is_empty()
+        self.streamed_argument_deltas
     }
 }
 
@@ -875,6 +916,7 @@ pub(crate) fn parse_responses_stream_event(
             if data.delta.is_empty() {
                 Ok(ResponsesEventAction::Items(vec![]))
             } else {
+                accumulator.mark_text_delta();
                 Ok(ResponsesEventAction::Items(vec![StreamItem::Text(
                     data.delta,
                 )]))
@@ -909,7 +951,9 @@ pub(crate) fn parse_responses_stream_event(
                 })?;
             let normalized = normalize_responses_response(data.response, provider)?;
             let mut items = Vec::new();
-            if let Some(content) = normalized.response.message.content {
+            if let Some(content) = normalized.response.message.content
+                && !accumulator.has_streamed_text()
+            {
                 items.push(StreamItem::Text(content));
             }
             // Only emit tool call deltas from the completed event when no incremental
@@ -1125,5 +1169,28 @@ mod tests {
             deltas.is_empty(),
             "tool call deltas must not be re-emitted when streaming deltas were already sent"
         );
+    }
+
+    #[test]
+    fn completed_event_emits_tool_calls_when_only_output_item_added_was_seen() {
+        let provider = ProviderId("test".to_owned());
+        let mut acc = ResponsesToolCallAccumulator::default();
+        acc.register_output_item(0, Some("call_a".to_owned()), Some("search".to_owned()));
+
+        let event = make_completed_event(&[("call_a", "search", r#"{"q":"hello"}"#)]);
+        let action = parse_responses_stream_event(&event, &provider, &mut acc).unwrap();
+        let ResponsesEventAction::Completed { items, .. } = action else {
+            panic!("expected Completed action");
+        };
+
+        let deltas = collect_tool_call_deltas(&items);
+        assert_eq!(
+            deltas.len(),
+            1,
+            "completed event should still emit tool calls when only output_item.added was seen"
+        );
+        assert_eq!(deltas[0].0, 0);
+        assert_eq!(deltas[0].1, "call_a");
+        assert_eq!(deltas[0].2, "search");
     }
 }

@@ -2257,6 +2257,15 @@ fn responses_request_serialization_snapshot() {
 }
 
 #[test]
+fn responses_stream_request_normalization_sets_stream_true() {
+    let context = test_context_for("openai-responses", "gpt-4o-mini", "Ping");
+    let request = ResponsesApiRequest::from_stream_context(&context, None, 0)
+        .expect("stream request should normalize");
+    let request_json = serde_json::to_value(request).expect("request should serialize");
+    assert_eq!(request_json["stream"].as_bool(), Some(true));
+}
+
+#[test]
 fn responses_sse_event_parsing() {
     let provider = ProviderId::from("openai-responses");
     let mut accumulator = ResponsesToolCallAccumulator::default();
@@ -2329,6 +2338,52 @@ fn responses_sse_event_parsing() {
 }
 
 #[test]
+fn responses_completed_event_does_not_repeat_streamed_text() {
+    let provider = ProviderId::from("openai-responses");
+    let mut accumulator = ResponsesToolCallAccumulator::default();
+
+    let text_event = crate::openai::SseEvent {
+        event_type: Some("response.output_text.delta".to_owned()),
+        data: serde_json::to_string(&ResponsesTextDeltaData {
+            delta: "Hello ".to_owned(),
+        })
+        .unwrap(),
+    };
+    let action =
+        parse_responses_stream_event(&text_event, &provider, &mut accumulator).expect("parse ok");
+    assert!(
+        matches!(action, ResponsesEventAction::Items(items) if matches!(&items[0], StreamItem::Text(text) if text == "Hello "))
+    );
+
+    let completed = ResponsesCompletedData {
+        response: ResponsesApiResponse {
+            id: Some("resp_43".to_owned()),
+            output: vec![ResponsesOutputBlock::Message {
+                role: "assistant".to_owned(),
+                content: vec![ResponsesOutputContent::OutputText {
+                    text: "Hello world".to_owned(),
+                }],
+            }],
+            status: Some("completed".to_owned()),
+            usage: None,
+        },
+    };
+    let completed_event = crate::openai::SseEvent {
+        event_type: Some("response.completed".to_owned()),
+        data: serde_json::to_string(&completed).unwrap(),
+    };
+    let action = parse_responses_stream_event(&completed_event, &provider, &mut accumulator)
+        .expect("parse ok");
+    let ResponsesEventAction::Completed { items, .. } = action else {
+        panic!("expected Completed action");
+    };
+    assert!(
+        !items.iter().any(|item| matches!(item, StreamItem::Text(_))),
+        "completed event should not re-emit assistant text after text deltas"
+    );
+}
+
+#[test]
 fn previous_response_id_updated_on_completion() {
     let base_url = spawn_one_shot_server(
         "200 OK",
@@ -2381,6 +2436,31 @@ fn partial_input_on_chained_turn() {
     let request_json = serde_json::to_value(request).expect("request should serialize");
     assert_eq!(request_json["input"].as_array().unwrap().len(), 1);
     assert!(request_json.get("instructions").is_none());
+}
+
+#[test]
+fn responses_stream_connection_lost_without_completed_event() {
+    let sse_body = sse_event(
+        "response.output_text.delta",
+        &json!({
+            "delta": "partial"
+        }),
+    );
+    let base_url = spawn_sse_one_shot_server("200 OK", &sse_body);
+    let provider = test_responses_provider(base_url);
+    let context = test_context_for("openai-responses", "gpt-4o-mini", "Ping");
+    let items = run_stream_collect_responses(&provider, &context);
+
+    assert!(
+        items
+            .iter()
+            .any(|item| matches!(item, Ok(StreamItem::Text(text)) if text == "partial")),
+        "stream should emit partial text delta"
+    );
+    assert!(
+        matches!(items.last(), Some(Ok(StreamItem::ConnectionLost(_)))),
+        "stream should end with ConnectionLost when response.completed is missing"
+    );
 }
 
 #[test]
@@ -2522,6 +2602,27 @@ fn run_complete_responses(
     context: &Context,
 ) -> Result<Response, ProviderError> {
     run_complete_with(provider, context)
+}
+
+fn run_stream_collect_responses(
+    provider: &ResponsesProvider,
+    context: &Context,
+) -> Vec<Result<StreamItem, ProviderError>> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime should build")
+        .block_on(async {
+            let mut stream = provider
+                .stream(context, DEFAULT_STREAM_BUFFER_SIZE)
+                .await
+                .expect("stream should start");
+            let mut items = Vec::new();
+            while let Some(item) = stream.recv().await {
+                items.push(item);
+            }
+            items
+        })
 }
 
 fn spawn_sequenced_server(responses: Vec<(&str, &str, &str)>) -> String {
