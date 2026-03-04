@@ -33,7 +33,7 @@ impl ToolRegistry {
 
     pub fn register_core_tools(&mut self) {
         let wasm_runner = default_wasm_runner();
-        register_runtime_tools(self, wasm_runner, BashTool::default(), None);
+        register_runtime_tools(self, wasm_runner, BashTool::default(), None, None, None);
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn Tool> {
@@ -199,13 +199,23 @@ pub async fn bootstrap_runtime_tools(
         .unwrap_or(Duration::from_secs(DEFAULT_SHELL_COMMAND_TIMEOUT_SECS));
     let bash_tool = bash_tool.with_command_timeout(command_timeout);
 
+    // Extract the shared session handle before moving bash_tool into the
+    // registry, so we can give the same session to the browser tool.
+    let shared_session = bash_tool.shared_session();
+
     let wasm_runner = runtime_wasm_runner(bootstrap);
     let mut registry = ToolRegistry::default();
+
+    // Determine the browser config from the bootstrap envelope.
+    let browser_config = bootstrap.and_then(|b| b.browser_config.as_ref());
+
     register_runtime_tools(
         &mut registry,
         wasm_runner,
         bash_tool,
         attachment_save_config,
+        browser_config,
+        shared_session,
     );
     registry.set_security_policy(Arc::new(workspace_security_policy(bootstrap, shell_config)));
     let availability = ToolAvailability {
@@ -268,6 +278,8 @@ fn register_runtime_tools(
     wasm_runner: Arc<dyn WasmToolRunner>,
     shell_tool: BashTool,
     attachment_save_config: Option<&AttachmentSaveConfig>,
+    browser_config: Option<&types::BrowserToolConfig>,
+    shared_session: Option<Arc<Mutex<Box<dyn ShellSession>>>>,
 ) {
     registry.register(FILE_READ_TOOL_NAME, ReadTool::new(wasm_runner.clone()));
     registry.register(FILE_SEARCH_TOOL_NAME, SearchTool::new(wasm_runner.clone()));
@@ -289,4 +301,13 @@ fn register_runtime_tools(
     );
     register_media_tools(registry, wasm_runner);
     registry.register(SHELL_EXEC_TOOL_NAME, shell_tool);
+
+    // Register the browser tool when browser config and a shared shell
+    // session are both available.
+    if let (Some(config), Some(session)) = (browser_config, shared_session) {
+        registry.register(
+            BROWSER_TOOL_NAME,
+            browser::BrowserTool::new(config.pinchtab_base_url.clone(), session),
+        );
+    }
 }

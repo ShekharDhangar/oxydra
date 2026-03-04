@@ -2955,6 +2955,13 @@ fn build_browser_env(port: u16, bridge_token: &str) -> (Vec<String>, String) {
         "BRIDGE_HEADLESS=true".to_owned(),
         "BRIDGE_STEALTH=light".to_owned(),
         "BRIDGE_STATE_DIR=/shared/.pinchtab".to_owned(),
+        // Cap the maximum number of open tabs to prevent unbounded resource
+        // usage. 20 is generous for typical agent workloads while keeping
+        // memory pressure bounded.
+        "BRIDGE_MAX_TABS=20".to_owned(),
+        // Disable tab restore on Pinchtab startup. Stale tabs from a
+        // previous session would have invalid locks and stale content.
+        "BRIDGE_NO_RESTORE=true".to_owned(),
         // Point Pinchtab at the wrapper script so stability flags are always
         // applied regardless of how Pinchtab handles CHROME_FLAGS internally.
         "CHROME_BINARY=/usr/local/bin/chromium-wrapper".to_owned(),

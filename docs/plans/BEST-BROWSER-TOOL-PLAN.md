@@ -647,20 +647,24 @@ Total: 1 tool call, 4+ RPCs, 0 LLM processing gaps
 
 ## 6. Implementation Plan
 
-### Phase 1: Infrastructure
+### Phase 1: Infrastructure ✅
 
 **Files:**
-- `crates/runner/src/lib.rs` — Add `BRIDGE_MAX_TABS=20`,
+- `crates/runner/src/lib.rs` — ✅ Added `BRIDGE_MAX_TABS=20`,
   `BRIDGE_NO_RESTORE=true` to `build_browser_env()`
-- `crates/runner/src/tests.rs` — Update env var assertions
+- `crates/runner/src/tests.rs` — ✅ Updated env var assertions
 
-**Verify:** `cargo test -p runner -- build_browser_env`
+**Verify:** `cargo test -p runner -- build_browser_env` ✅
 
-### Phase 2: Browser Tool
+### Phase 2: Browser Tool ✅
 
 **Files:**
-- `crates/tools/src/browser.rs` — Create `BrowserTool` (~300 lines)
-- `crates/tools/src/lib.rs` — Register tool when browser is available
+- `crates/tools/src/browser.rs` — ✅ Created `BrowserTool` (~350 lines)
+- `crates/tools/src/lib.rs` — ✅ Registered tool module, exported constant,
+  made helpers `pub(crate)`, added session sharing methods to `BashTool`
+- `crates/tools/src/registry.rs` — ✅ Updated `register_runtime_tools` and
+  `bootstrap_runtime_tools` to register `BrowserTool` when browser config and
+  shared shell session are both available
 
 **Architecture:**
 
@@ -698,12 +702,20 @@ impl Tool for BrowserTool {
 }
 ```
 
-**Note:** `execute_with_shell_session()` in `lib.rs` is currently private.
-Either make it `pub(crate)` so `browser.rs` can call it, or have
-`BrowserTool` use the `ShellSession` trait methods directly (`exec_command`
-+ `stream_output` loop).
+**Note:** `execute_with_shell_session()` in `lib.rs` was made `pub(crate)` so
+`browser.rs` can call it. `BashTool` gained `shared_session()` and
+`from_shared_session()` methods so the shell session is shared between the
+shell_exec and browser tools.
 
-**Verify:** Unit tests for script generation + integration tests with mock shell
+**Tests:** 22 unit tests for script generation, schema, owner derivation,
+action-specific parameters, and mock shell session. All pass.
+
+**Verify:** ✅
+```
+cargo fmt --all
+cargo clippy -p tools -p runner --all-targets --all-features -- -D warnings
+cargo test -p tools -p runner -- --test-threads=1
+```
 
 ### Phase 3: Skill and Reference Updates
 

@@ -2226,6 +2226,11 @@ fn build_browser_env_returns_expected_vars() {
     assert!(env_vars.contains(&"BRIDGE_BIND=127.0.0.1".to_owned()));
     assert!(env_vars.contains(&"BRIDGE_TOKEN=test-token-abc".to_owned()));
     assert!(env_vars.contains(&"BRIDGE_HEADLESS=true".to_owned()));
+    // Tab capacity is capped to prevent unbounded resource usage.
+    assert!(env_vars.contains(&"BRIDGE_MAX_TABS=20".to_owned()));
+    // Tab restore is disabled so stale tabs from a previous session don't
+    // persist with invalid locks and stale content.
+    assert!(env_vars.contains(&"BRIDGE_NO_RESTORE=true".to_owned()));
     // The wrapper script is used so that stability flags are always forwarded
     // to Chromium regardless of how Pinchtab handles CHROME_FLAGS internally.
     assert!(env_vars.contains(&"CHROME_BINARY=/usr/local/bin/chromium-wrapper".to_owned()));

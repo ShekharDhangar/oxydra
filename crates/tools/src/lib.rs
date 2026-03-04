@@ -32,6 +32,7 @@ mod registry;
 pub mod sandbox;
 
 pub mod attachment_tools;
+pub mod browser;
 mod delegation_tools;
 pub mod media_tools;
 pub mod memory_tools;
@@ -45,6 +46,7 @@ mod tests;
 pub use delegation_tools::register_delegation_tools;
 
 pub use attachment_tools::{ATTACHMENT_SAVE_TOOL_NAME, register_attachment_tools};
+pub use browser::BROWSER_TOOL_NAME;
 pub use media_tools::{SEND_MEDIA_TOOL_NAME, register_media_tools};
 pub use memory_tools::{
     MEMORY_DELETE_TOOL_NAME, MEMORY_SAVE_TOOL_NAME, MEMORY_SEARCH_TOOL_NAME,
@@ -97,6 +99,7 @@ pub fn canonical_tool_names() -> Vec<&'static str> {
         WEB_SEARCH_TOOL_NAME,
         VAULT_COPYTO_TOOL_NAME,
         SHELL_EXEC_TOOL_NAME,
+        BROWSER_TOOL_NAME,
         ATTACHMENT_SAVE_TOOL_NAME,
         SEND_MEDIA_TOOL_NAME,
         MEMORY_SEARCH_TOOL_NAME,
@@ -378,6 +381,23 @@ impl BashTool {
         Self {
             backend: BashBackend::Session(Arc::new(Mutex::new(session))),
             command_timeout: Duration::from_secs(DEFAULT_SHELL_COMMAND_TIMEOUT_SECS),
+        }
+    }
+
+    pub fn from_shared_session(session: Arc<Mutex<Box<dyn ShellSession>>>) -> Self {
+        Self {
+            backend: BashBackend::Session(session),
+            command_timeout: Duration::from_secs(DEFAULT_SHELL_COMMAND_TIMEOUT_SECS),
+        }
+    }
+
+    /// Returns a clone of the shared session handle, if the tool is backed by
+    /// a sidecar session.  Used to share the session with other tools (e.g.
+    /// the browser tool) that need to execute commands via the same sidecar.
+    pub fn shared_session(&self) -> Option<Arc<Mutex<Box<dyn ShellSession>>>> {
+        match &self.backend {
+            BashBackend::Session(session) => Some(Arc::clone(session)),
+            _ => None,
         }
     }
 
@@ -1112,21 +1132,21 @@ fn unavailable_status(
     })
 }
 
-fn parse_args<T>(tool: &str, args: &str) -> Result<T, ToolError>
+pub(crate) fn parse_args<T>(tool: &str, args: &str) -> Result<T, ToolError>
 where
     T: DeserializeOwned,
 {
     serde_json::from_str(args).map_err(|error| invalid_args(tool, error.to_string()))
 }
 
-fn invalid_args(tool: &str, message: impl Into<String>) -> ToolError {
+pub(crate) fn invalid_args(tool: &str, message: impl Into<String>) -> ToolError {
     ToolError::InvalidArguments {
         tool: tool.to_owned(),
         message: message.into(),
     }
 }
 
-fn execution_failed(tool: &str, message: impl Into<String>) -> ToolError {
+pub(crate) fn execution_failed(tool: &str, message: impl Into<String>) -> ToolError {
     ToolError::ExecutionFailed {
         tool: tool.to_owned(),
         message: message.into(),
@@ -1161,7 +1181,7 @@ async fn invoke_wasm_tool(
 /// output to complete after the command finishes/times-out.
 const SHELL_COMMAND_TIMEOUT_SAFETY_MARGIN_SECS: u64 = 5;
 
-async fn execute_with_shell_session(
+pub(crate) async fn execute_with_shell_session(
     session: &Arc<Mutex<Box<dyn ShellSession>>>,
     command: &str,
     timeout: Duration,
