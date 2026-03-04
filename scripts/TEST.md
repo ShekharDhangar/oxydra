@@ -19,4 +19,5 @@ If you want repeatable install testing on your Mac and a Raspberry Pi over SSH, 
   --target ssh:pi@raspberrypi.local
 ```
 
-Fresh mode prints commands to launch the onboarding wizard (`runner ... web`) from the isolated install path and a cleanup command to remove it afterwards.
+`scripts/.env` is auto-loaded when present (gitignored by default). The script writes those values into the fresh install as `runner.env` and generates `start-runner.sh` / `open-web.sh` wrappers so env values override local or remote host environment values during test startup.
+Use `--env-file /path/to/file` to use a different local env file, or `--no-env-file` to disable env loading.

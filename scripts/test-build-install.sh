@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_SCRIPT="${ROOT_DIR}/scripts/install-release.sh"
 
 MODE="fresh"
@@ -15,6 +16,9 @@ NO_PULL=false
 AUTO_YES=true
 UPGRADE_INSTALL_DIR=""
 UPGRADE_BASE_DIR=""
+ENV_SOURCE_PATH="${SCRIPT_DIR}/.env"
+ENV_SOURCE_EXPLICIT=false
+ENV_OVERRIDES=()
 TARGETS=()
 
 usage() {
@@ -41,6 +45,8 @@ Options:
                           (default: 127.0.0.1:9400)
   --no-pull              Pass --no-pull to installer
   --interactive          Do not auto-pass --yes to installer
+  --env-file <path>      Source env vars from this local file (default: scripts/.env)
+  --no-env-file          Disable .env loading
   --install-dir <path>   Override install dir for --mode upgrade
   --base-dir <path>      Override base dir for --mode upgrade
   -h, --help             Show help
@@ -65,6 +71,64 @@ sanitize_label() {
   printf '%s' "$1" | tr -c '[:alnum:]._-' '-'
 }
 
+trim_space() {
+  printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+upsert_env_override() {
+  local entry="$1"
+  local key="${entry%%=*}"
+  local i existing existing_key
+  for i in "${!ENV_OVERRIDES[@]}"; do
+    existing="${ENV_OVERRIDES[$i]}"
+    existing_key="${existing%%=*}"
+    if [[ "$existing_key" == "$key" ]]; then
+      ENV_OVERRIDES[$i]="$entry"
+      return
+    fi
+  done
+  ENV_OVERRIDES+=("$entry")
+}
+
+load_env_overrides() {
+  local source_path="$1"
+  local raw line key value
+  local line_no=0
+
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    line_no=$((line_no + 1))
+    line="$(trim_space "$raw")"
+    [[ -z "$line" || "${line:0:1}" == "#" ]] && continue
+
+    if [[ "$line" == export[[:space:]]* ]]; then
+      line="$(trim_space "${line#export}")"
+    fi
+
+    if [[ "$line" != *=* ]]; then
+      fail "invalid env entry in ${source_path}:${line_no} (expected KEY=VALUE)"
+    fi
+
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="$(trim_space "$key")"
+    if [[ -z "$key" || ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      fail "invalid env key in ${source_path}:${line_no}: ${key}"
+    fi
+
+    upsert_env_override "${key}=${value}"
+  done < "$source_path"
+}
+
+write_env_overrides_file() {
+  local destination="$1"
+  local entry
+  mkdir -p "$(dirname "$destination")"
+  : > "$destination"
+  for entry in "${ENV_OVERRIDES[@]}"; do
+    printf '%s\n' "$entry" >> "$destination"
+  done
+}
+
 quote_args() {
   local out="" arg
   for arg in "$@"; do
@@ -77,6 +141,16 @@ run_remote_command() {
   local host="$1"
   shift
   ssh "$host" "$(quote_args "$@")"
+}
+
+copy_file_to_remote() {
+  local host="$1"
+  local source_file="$2"
+  local destination="$3"
+  local mode="$4"
+  run_remote_command "$host" mkdir -p "$(dirname "$destination")"
+  ssh "$host" "cat > $(printf '%q' "$destination")" < "$source_file"
+  run_remote_command "$host" chmod "$mode" "$destination"
 }
 
 run_remote_installer() {
@@ -96,6 +170,35 @@ run_remote_installer() {
 
   ssh "$host" "$(quote_args rm -f "$remote_installer")" >/dev/null 2>&1 || true
   return "$status"
+}
+
+write_runner_wrapper_script() {
+  local destination="$1"
+  local runner_bin="$2"
+  local runner_config="$3"
+  local env_file="$4"
+  shift 4
+
+  local exec_cmd
+  exec_cmd="$(quote_args "$runner_bin" --config "$runner_config" "$@")"
+
+  cat >"$destination" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_FILE=$(printf '%q' "$env_file")
+
+if [[ -f "\$ENV_FILE" ]]; then
+  while IFS= read -r line || [[ -n "\$line" ]]; do
+    line="\$(printf '%s' "\$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -z "\$line" || "\${line:0:1}" == "#" ]] && continue
+    export "\$line"
+  done < "\$ENV_FILE"
+fi
+
+exec ${exec_cmd}
+EOF
+  chmod 0755 "$destination"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -140,6 +243,16 @@ while [[ $# -gt 0 ]]; do
       AUTO_YES=false
       shift
       ;;
+    --env-file)
+      ENV_SOURCE_PATH="${2:?Missing value for --env-file}"
+      ENV_SOURCE_EXPLICIT=true
+      shift 2
+      ;;
+    --no-env-file)
+      ENV_SOURCE_PATH=""
+      ENV_SOURCE_EXPLICIT=true
+      shift
+      ;;
     --install-dir)
       UPGRADE_INSTALL_DIR="${2:?Missing value for --install-dir}"
       shift 2
@@ -175,6 +288,15 @@ fi
 
 if [[ ! -f "$INSTALL_SCRIPT" ]]; then
   fail "installer script not found: ${INSTALL_SCRIPT}"
+fi
+
+if [[ -n "$ENV_SOURCE_PATH" ]]; then
+  if [[ -f "$ENV_SOURCE_PATH" ]]; then
+    load_env_overrides "$ENV_SOURCE_PATH"
+    log "Loaded ${#ENV_OVERRIDES[@]} env override(s) from ${ENV_SOURCE_PATH}"
+  elif [[ "$ENV_SOURCE_EXPLICIT" == "true" ]]; then
+    fail "env file not found: ${ENV_SOURCE_PATH}"
+  fi
 fi
 
 if [[ "$MODE" == "upgrade" ]]; then
@@ -240,6 +362,9 @@ for target in "${TARGETS[@]}"; do
     fresh_workspace="${fresh_base}/workspace"
     fresh_backup="${fresh_base}/backups"
     fresh_runner_config="${fresh_workspace}/.oxydra/runner.toml"
+    fresh_runner_env="${fresh_base}/runner.env"
+    start_wrapper="${fresh_base}/start-runner.sh"
+    web_wrapper="${fresh_base}/open-web.sh"
 
     install_args+=(--install-dir "$fresh_bin" --base-dir "$fresh_workspace" --backup-dir "$fresh_backup")
   else
@@ -261,26 +386,68 @@ for target in "${TARGETS[@]}"; do
     continue
   fi
 
-  web_cmd="$(quote_args "${fresh_bin}/runner" --config "$fresh_runner_config" web --bind "$WEB_BIND")"
-  start_cmd="$(quote_args "${fresh_bin}/runner" --config "$fresh_runner_config" --user alice start)"
+  if [[ "${#ENV_OVERRIDES[@]}" -gt 0 ]]; then
+    tmp_env_file="$(mktemp)"
+    tmp_start_wrapper="$(mktemp)"
+    tmp_web_wrapper="$(mktemp)"
+    write_env_overrides_file "$tmp_env_file"
+    write_runner_wrapper_script "$tmp_start_wrapper" "$fresh_bin/runner" "$fresh_runner_config" "$fresh_runner_env" --env-file "$fresh_runner_env" --user alice start
+    write_runner_wrapper_script "$tmp_web_wrapper" "$fresh_bin/runner" "$fresh_runner_config" "$fresh_runner_env" web --bind "$WEB_BIND"
+
+    if [[ "$target_kind" == "local" ]]; then
+      mkdir -p "$fresh_base"
+      cp "$tmp_env_file" "$fresh_runner_env"
+      chmod 0600 "$fresh_runner_env"
+      cp "$tmp_start_wrapper" "$start_wrapper"
+      chmod 0755 "$start_wrapper"
+      cp "$tmp_web_wrapper" "$web_wrapper"
+      chmod 0755 "$web_wrapper"
+    else
+      copy_file_to_remote "$target_host" "$tmp_env_file" "$fresh_runner_env" 0600
+      copy_file_to_remote "$target_host" "$tmp_start_wrapper" "$start_wrapper" 0755
+      copy_file_to_remote "$target_host" "$tmp_web_wrapper" "$web_wrapper" 0755
+    fi
+
+    rm -f "$tmp_env_file" "$tmp_start_wrapper" "$tmp_web_wrapper"
+    start_cmd="$(quote_args "$start_wrapper")"
+    web_cmd="$(quote_args "$web_wrapper")"
+  else
+    web_cmd="$(quote_args "${fresh_bin}/runner" --config "$fresh_runner_config" web --bind "$WEB_BIND")"
+    start_cmd="$(quote_args "${fresh_bin}/runner" --config "$fresh_runner_config" --user alice start)"
+  fi
+
   cleanup_cmd="$(quote_args rm -rf "$fresh_base")"
 
   if [[ "$target_kind" == "local" ]]; then
     log "Fresh install path: ${fresh_base}"
+    if [[ "${#ENV_OVERRIDES[@]}" -gt 0 ]]; then
+      log "Runner env file: ${fresh_runner_env}"
+    fi
     log "Start runner daemon: ${start_cmd}"
     log "Open onboarding wizard: ${web_cmd}"
     log "Discard this fresh install: ${cleanup_cmd}"
     if [[ "$START_WEB" == "true" ]]; then
-      "${fresh_bin}/runner" --config "$fresh_runner_config" web --bind "$WEB_BIND"
+      if [[ "${#ENV_OVERRIDES[@]}" -gt 0 ]]; then
+        "$web_wrapper"
+      else
+        "${fresh_bin}/runner" --config "$fresh_runner_config" web --bind "$WEB_BIND"
+      fi
     fi
   else
     log "Fresh install path on ${target_host}: ${fresh_base}"
+    if [[ "${#ENV_OVERRIDES[@]}" -gt 0 ]]; then
+      log "Runner env file on ${target_host}: ${fresh_runner_env}"
+    fi
     log "Start runner daemon on ${target_host}: ssh ${target_host} ${start_cmd}"
     log "Open onboarding wizard on ${target_host}: ssh ${target_host} ${web_cmd}"
     log "Discard this fresh install on ${target_host}: ssh ${target_host} ${cleanup_cmd}"
     if [[ "$START_WEB" == "true" ]]; then
       log "Use SSH port-forward in another terminal: ssh -L 9400:${WEB_BIND%:*}:${WEB_BIND##*:} ${target_host}"
-      run_remote_command "$target_host" "${fresh_bin}/runner" --config "$fresh_runner_config" web --bind "$WEB_BIND"
+      if [[ "${#ENV_OVERRIDES[@]}" -gt 0 ]]; then
+        run_remote_command "$target_host" "$web_wrapper"
+      else
+        run_remote_command "$target_host" "${fresh_bin}/runner" --config "$fresh_runner_config" web --bind "$WEB_BIND"
+      fi
     fi
   fi
 done
