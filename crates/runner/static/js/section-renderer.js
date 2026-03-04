@@ -104,7 +104,11 @@ window.SectionRenderer = (function () {
     // Optional section toggle
     var sectionEnabled = true;
     if (section.optional_section) {
-      sectionEnabled = hasAnyValues(section, values);
+      if (typeof opts.initialEnabled === 'boolean') {
+        sectionEnabled = opts.initialEnabled;
+      } else {
+        sectionEnabled = hasAnyValues(section, values);
+      }
 
       var onLabel = section.toggle_on_label || 'Enabled';
       var offLabel = section.toggle_off_label || 'Disabled';

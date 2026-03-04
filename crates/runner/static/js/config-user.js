@@ -226,12 +226,16 @@ window.UserConfigEditor = (function () {
     function renderTelegramSection(parent, sectionSchema, configValues, renderOpts) {
       insertGroupHeader(parent, sectionSchema);
 
-      // Separate senders from other fields
+      // Separate the section-level toggle field and senders from other fields.
       var regularFields = [];
       var sendersField = null;
       sectionSchema.fields.forEach(function (f) {
         if (f.path === 'channels.telegram.senders') {
           sendersField = f;
+        } else if (f.path === 'channels.telegram.enabled') {
+          // The optional section toggle is the single source of truth in UI.
+          // Keep this field in schema for patch defaults, but don't render a
+          // duplicate inner toggle.
         } else {
           regularFields.push(f);
         }
@@ -247,6 +251,7 @@ window.UserConfigEditor = (function () {
         collection: null,
         optional_section: sectionSchema.optional_section,
       };
+      var telegramTopToggleEnabled = resolveValue('channels.telegram.enabled', configValues) === true;
 
       var sectionResult = window.SectionRenderer.renderSection(modifiedSchema, configValues, {
         dynamicSources: renderOpts.dynamicSources,
@@ -255,13 +260,16 @@ window.UserConfigEditor = (function () {
         },
         onToggleSection: function (sectionId, enabled) {
           if (enabled) {
+            changes['channels.telegram.enabled'] = true;
             enabledSections[sectionId] = true;
             delete disabledSections[sectionId];
           } else {
+            delete changes['channels.telegram.enabled'];
             disabledSections[sectionId] = true;
             delete enabledSections[sectionId];
           }
         },
+        initialEnabled: telegramTopToggleEnabled,
         startExpanded: shouldStartExpanded(sectionSchema),
         idPrefix: sectionSchema.id,
       });
@@ -463,6 +471,9 @@ window.UserConfigEditor = (function () {
     }
 
     function sectionHasValues(sectionSchema, configValues) {
+      if (sectionSchema.id === 'channels.telegram') {
+        return resolveValue('channels.telegram.enabled', configValues) === true;
+      }
       return sectionSchema.fields.some(function (f) {
         var v = resolveValue(f.path, configValues);
         return v !== undefined && v !== null;
@@ -505,8 +516,14 @@ window.UserConfigEditor = (function () {
           var sectionSchema = findSectionById(sectionId);
           if (sectionSchema) {
             var defaults = {};
+            if (sectionId === 'channels.telegram') {
+              var existingTelegram = resolveValue(sectionId, config);
+              if (existingTelegram && typeof existingTelegram === 'object') {
+                defaults = JSON.parse(JSON.stringify(existingTelegram));
+              }
+            }
             sectionSchema.fields.forEach(function (f) {
-              if (f.default != null) {
+              if (f.default != null && resolveValue(f.path, defaults) === undefined) {
                 setNestedValue(defaults, f.path, JSON.parse(JSON.stringify(f.default)));
               }
             });

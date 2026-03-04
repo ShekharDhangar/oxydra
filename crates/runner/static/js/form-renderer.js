@@ -218,6 +218,9 @@ window.FormRenderer = (function () {
 
     if (value != null) {
       input.value = value;
+    } else if (!schema.nullable && schema.default != null) {
+      var defaultNumber = Number(schema.default);
+      input.value = Number.isFinite(defaultNumber) ? defaultNumber : String(schema.default);
     } else {
       input.value = '';
       if (schema.placeholder) {
