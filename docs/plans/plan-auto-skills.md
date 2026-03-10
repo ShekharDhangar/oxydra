@@ -23,8 +23,8 @@ immediately-usable skill file.
 - **Simple tool surface.** Two tools: `skill_create` and `skill_update`. No
   separate validate, delete, list, or reload tools — keep the API minimal.
 - **Workspace-scoped writes.** Agent-authored skills always land in the
-  workspace skills directory (`.oxydra/skills/`). System and user directories
-  are read-only from the agent's perspective.
+  workspace config skills directory (`<workspace>/.oxydra/skills/`). System
+  and user directories are read-only from the agent's perspective.
 - **Immediate availability.** After a successful create/update, the skill
   should be available in the next session (or after the next bootstrap). No
   hot-reload complexity — skills are loaded at bootstrap time and that is
@@ -90,8 +90,10 @@ Updates an existing skill file in the workspace skills directory.
 
 **Behavior:**
 
-1. Look up the existing skill file at `.oxydra/skills/{name}.md` or
-   `.oxydra/skills/{Name}/SKILL.md` (supporting both formats).
+1. Scan the workspace skills directory and locate the existing skill by parsed
+   frontmatter `name`, not by filename or folder name. This preserves support
+   for both bare files and folder-based skills whose directory name does not
+   match the skill identifier.
 2. If not found in the workspace directory, return an error. Agent-authored
    tools can only update workspace-scoped skills; system/user/embedded
    skills cannot be modified (the agent should create a workspace override
@@ -157,9 +159,9 @@ struct SkillUpdateArgs {
 // Registration
 pub fn register_skill_tools(
     registry: &mut ToolRegistry,
-    workspace_dir: &Path,
+    workspace_config_dir: &Path,
 ) {
-    let skills_dir = workspace_dir.join("skills");
+    let skills_dir = workspace_config_dir.join("skills");
     registry.register(SKILL_CREATE_TOOL_NAME, SkillCreateTool { skills_dir: skills_dir.clone() });
     registry.register(SKILL_UPDATE_TOOL_NAME, SkillUpdateTool { skills_dir });
 }
@@ -177,12 +179,14 @@ fn validate_skill_name(name: &str) -> Result<(), String>
 /// Assembles YAML frontmatter + content into a complete skill file string.
 fn assemble_skill_file(metadata: &SkillMetadata, content: &str) -> String
 
-/// Resolves the skill file path within the skills directory.
-/// Checks bare file first ({name}.md), then folder ({name}/SKILL.md).
-fn resolve_skill_path(skills_dir: &Path, name: &str) -> Option<PathBuf>
+/// Scans the workspace skills directory and returns the exact on-disk file
+/// whose parsed metadata.name matches `name`.
+fn resolve_skill_path_by_metadata(skills_dir: &Path, name: &str) -> Result<Option<PathBuf>, String>
 
-/// Ensures the skills directory path is safe (no traversal).
-fn validate_path_safety(skills_dir: &Path, name: &str) -> Result<PathBuf, String>
+/// Resolves a new bare-file path (`{name}.md`) under the workspace skills
+/// directory using a canonical existing ancestor, so creates work for
+/// non-existent files without allowing traversal.
+fn validate_new_skill_path(skills_dir: &Path, name: &str) -> Result<PathBuf, String>
 ```
 
 ### 4.3 Making `parse_skill_content` Reusable
@@ -208,22 +212,28 @@ In `crates/tools/src/registry.rs`, `register_runtime_tools()`:
 
 ```rust
 // After existing tool registrations:
-skill_tools::register_skill_tools(&mut registry, workspace_root);
+let workspace_config_dir = workspace_root.join(".oxydra");
+skill_tools::register_skill_tools(&mut registry, &workspace_config_dir);
 ```
 
-The workspace root is already available in the bootstrap context via the
-`RunnerBootstrapEnvelope`.
+The runtime already knows the workspace root; the skill tools should be wired
+to the workspace config directory (`<workspace>/.oxydra`) so writes land where
+`ConfigSearchPaths::discover()` / `discover_skills()` already load from.
 
 ### 4.5 Path Safety
 
-The `validate_path_safety` function:
-1. Joins `skills_dir` with `{name}.md`.
-2. Canonicalizes both `skills_dir` and the joined path.
-3. Asserts the joined path starts with `skills_dir`.
-4. Rejects names containing `/`, `\`, `..`, or null bytes.
+The `validate_new_skill_path` function:
+1. Rejects names containing `/`, `\`, `..`, or null bytes. The kebab-case
+   validation already rules these out, but keep the explicit guard.
+2. Ensures the workspace skills directory exists (create it if needed).
+3. Canonicalizes the existing skills directory, not the final `{name}.md`
+   target.
+4. Appends `{name}.md` to that canonical directory and asserts the resulting
+   parent is still inside the canonical skills root.
 
-This is defense-in-depth on top of the kebab-case regex, which already
-prevents most traversal attempts.
+This avoids the broken "canonicalize the final file before create" approach:
+new skill files do not exist yet, so only an existing ancestor/root can be
+canonicalized safely.
 
 ### 4.6 Frontmatter Serialization
 
@@ -256,7 +266,7 @@ dependency. The fields are known and controlled.
 |---|---|
 | `crates/tools/src/skill_tools.rs` | **New.** `SkillCreateTool`, `SkillUpdateTool`, registration function. |
 | `crates/tools/src/lib.rs` | Add `pub mod skill_tools;`, export constants, add to `canonical_tool_names()`. |
-| `crates/tools/src/registry.rs` | Call `register_skill_tools()` in `register_runtime_tools()`. |
+| `crates/tools/src/registry.rs` | Call `register_skill_tools()` with the workspace config directory (`workspace_root/.oxydra`). |
 | `crates/types/src/skill.rs` | Add `validate_skill_content()` public function. Add `Serialize` derive to `SkillMetadata`. |
 | `crates/types/Cargo.toml` | Add `gray_matter` dependency. |
 | `crates/runner/src/skills.rs` | Refactor `parse_skill_content()` to call `types::validate_skill_content()`. |
@@ -269,15 +279,21 @@ dependency. The fields are known and controlled.
    and content. Verify by parsing the written file.
 2. **Happy path update:** Existing skill → partial update → verify only
    changed fields are modified.
-3. **Name validation:** Reject uppercase, spaces, slashes, `..`, empty, too
-   long.
-4. **Duplicate create:** Create same name twice → second call returns error
-   pointing to `skill_update`.
-5. **Update non-existent:** Returns clear error.
-6. **Token cap:** Content exceeding 12000 chars (~3000 tokens) → rejected.
-7. **Path traversal:** Names like `../../etc/passwd` or `foo/../../bar` →
+3. **Update resolves by metadata name:** A folder skill such as
+   `BrowserAutomation/SKILL.md` with frontmatter `name: browser-automation`
+   is found and updated via `skill_update("browser-automation")`.
+4. **Create path safety for missing target:** Creating `{name}.md` succeeds
+   when the file does not yet exist, while traversal attempts are still
    rejected.
-8. **Update with no fields:** Returns error.
+5. **Name validation:** Reject uppercase, spaces, slashes, `..`, empty, too
+   long.
+6. **Duplicate create:** Create same name twice → second call returns error
+   pointing to `skill_update`.
+7. **Update non-existent:** Returns clear error.
+8. **Token cap:** Content exceeding 12000 chars (~3000 tokens) → rejected.
+9. **Path traversal:** Names like `../../etc/passwd` or `foo/../../bar` →
+   rejected.
+10. **Update with no fields:** Returns error.
 9. **Default values:** Omitted `activation` defaults to `auto`, omitted
    `priority` defaults to 100.
 
