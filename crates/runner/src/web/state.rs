@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
+use std::ffi::CStr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -41,7 +42,7 @@ impl WebState {
         } else {
             config_dir.join(configured_root)
         };
-        let allowed_hosts = allowed_host_values(&bind_address);
+        let allowed_hosts = allowed_host_values(&bind_address, local_host_aliases());
         let auth_token = global_config.web.resolve_auth_token();
         let runner_executable = std::env::var_os("OXYDRA_WEB_RUNNER_EXECUTABLE")
             .map(PathBuf::from)
@@ -95,10 +96,9 @@ impl WebState {
     ///
     /// When the server is bound to a wildcard address (`0.0.0.0` / `::`), any
     /// host header whose host part is a bare IP address at the correct port is
-    /// also accepted. IP-based host headers cannot be exploited by DNS
-    /// rebinding attacks (which require a controllable hostname), so this
-    /// preserves the rebinding defence while permitting legitimate access from
-    /// remote machines.
+    /// also accepted. The local machine hostname is also accepted on the same
+    /// port so operators can reach the configurator via the host's own name
+    /// without opening the rebinding guard to arbitrary external hostnames.
     pub fn allows_host_header(&self, host_header: &str) -> bool {
         let normalized = host_header.trim().to_ascii_lowercase();
         if self.allowed_hosts.contains(&normalized) {
@@ -171,7 +171,11 @@ impl WebState {
     }
 }
 
-fn allowed_host_values(bind_address: &str) -> BTreeSet<String> {
+fn allowed_host_values(
+    bind_address: &str,
+    local_host_aliases: impl IntoIterator<Item = String>,
+) -> BTreeSet<String> {
+    let local_host_aliases = local_host_aliases.into_iter().collect::<Vec<_>>();
     let mut allowed = BTreeSet::new();
     if let Ok(addr) = bind_address.parse::<std::net::SocketAddr>() {
         match addr {
@@ -184,12 +188,28 @@ fn allowed_host_values(bind_address: &str) -> BTreeSet<String> {
                 if v4.ip().is_loopback() || v4.ip().is_unspecified() {
                     allowed.insert(format!("localhost:{}", v4.port()).to_ascii_lowercase());
                 }
+                if v4.ip().is_unspecified() {
+                    allowed.extend(
+                        local_host_aliases
+                            .iter()
+                            .filter(|host| !host.is_empty())
+                            .map(|host| format!("{host}:{}", v4.port()).to_ascii_lowercase()),
+                    );
+                }
             }
             std::net::SocketAddr::V6(v6) => {
                 let host = format!("[{}]:{}", v6.ip(), v6.port()).to_ascii_lowercase();
                 allowed.insert(host);
                 if v6.ip().is_loopback() || v6.ip().is_unspecified() {
                     allowed.insert(format!("localhost:{}", v6.port()).to_ascii_lowercase());
+                }
+                if v6.ip().is_unspecified() {
+                    allowed.extend(
+                        local_host_aliases
+                            .iter()
+                            .filter(|host| !host.is_empty())
+                            .map(|host| format!("{host}:{}", v6.port()).to_ascii_lowercase()),
+                    );
                 }
             }
         }
@@ -200,21 +220,70 @@ fn allowed_host_values(bind_address: &str) -> BTreeSet<String> {
     allowed
 }
 
+fn local_host_aliases() -> BTreeSet<String> {
+    let mut aliases = BTreeSet::new();
+    if let Some(hostname) = read_local_hostname() {
+        let normalized = hostname.trim().trim_end_matches('.').to_ascii_lowercase();
+        if !normalized.is_empty() {
+            aliases.insert(normalized.clone());
+            if let Some((short, _)) = normalized.split_once('.')
+                && !short.is_empty()
+            {
+                aliases.insert(short.to_owned());
+            }
+        }
+    }
+    aliases
+}
+
+fn read_local_hostname() -> Option<String> {
+    let mut buffer = [0 as libc::c_char; 256];
+    // SAFETY: `buffer` is valid writable memory and its length is passed
+    // correctly. `gethostname` writes at most `buffer.len()` bytes.
+    let result = unsafe { libc::gethostname(buffer.as_mut_ptr(), buffer.len()) };
+    if result != 0 {
+        return None;
+    }
+    buffer[buffer.len() - 1] = 0;
+    let hostname = unsafe { CStr::from_ptr(buffer.as_ptr()) };
+    hostname.to_str().ok().map(ToOwned::to_owned)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use types::RunnerGlobalConfig;
 
     fn make_state(bind: &str) -> WebState {
+        make_state_with_aliases(bind, BTreeSet::new())
+    }
+
+    fn make_state_with_aliases(bind: &str, aliases: BTreeSet<String>) -> WebState {
         let global_config = RunnerGlobalConfig {
             workspace_root: std::env::temp_dir().to_string_lossy().to_string(),
             ..Default::default()
         };
-        WebState::new(
+        let config_path = std::path::PathBuf::from("/tmp/config.toml");
+        let config_dir = config_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let configured_root = PathBuf::from(&global_config.workspace_root);
+        let workspace_root = if configured_root.is_absolute() {
+            configured_root
+        } else {
+            config_dir.join(configured_root)
+        };
+        WebState {
             global_config,
-            std::path::PathBuf::from("/tmp/config.toml"),
-            bind.to_owned(),
-        )
+            config_path,
+            workspace_root,
+            bind_address: bind.to_owned(),
+            allowed_hosts: allowed_host_values(bind, aliases),
+            auth_token: None,
+            runner_executable: PathBuf::from("runner"),
+            spawned_daemon_pids: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     // --- loopback bind (127.0.0.1) -----------------------------------------
@@ -271,9 +340,14 @@ mod tests {
     }
 
     #[test]
-    fn wildcard_bind_rejects_hostname_header() {
-        // Hostnames on a wildcard bind could still be DNS-rebinding vectors.
-        let state = make_state("0.0.0.0:8881");
+    fn wildcard_bind_accepts_local_hostname_alias() {
+        let state = make_state_with_aliases("0.0.0.0:8881", BTreeSet::from(["arachnoid".into()]));
+        assert!(state.allows_host_header("arachnoid:8881"));
+    }
+
+    #[test]
+    fn wildcard_bind_rejects_arbitrary_hostname_header() {
+        let state = make_state_with_aliases("0.0.0.0:8881", BTreeSet::from(["arachnoid".into()]));
         assert!(!state.allows_host_header("evil.example.com:8881"));
     }
 

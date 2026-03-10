@@ -116,7 +116,7 @@ The web configurator runs as an independent process, separate from per-user daem
 #### Security
 
 - Binds to `127.0.0.1` by default (loopback only)
-- Host header validation blocks DNS rebinding attacks
+- Host header validation blocks DNS rebinding attacks while still allowing localhost and the machine's own hostname on wildcard binds
 - Content-Type enforcement on all mutation endpoints
 - Optional bearer token authentication via `[web]` config
 

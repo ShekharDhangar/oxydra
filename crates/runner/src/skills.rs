@@ -466,7 +466,7 @@ mod tests {
     use tools::sandbox::{
         SessionConnection, SessionStatus, SessionUnavailable, SessionUnavailableReason,
     };
-    use types::{CHARS_PER_TOKEN, MAX_SKILL_TOKENS, SkillMetadata};
+    use types::{CHARS_PER_TOKEN, MAX_SKILL_TOKENS};
 
     use super::*;
 

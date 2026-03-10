@@ -441,7 +441,7 @@ pub struct WebConfig {
 }
 ```
 
-The `[web]` section in `runner.toml` configures the web configurator server started via `runner web`. When `auth_mode = "token"`, all API endpoints require a bearer token. The token is resolved from the env var named in `auth_token_env` first, then from the inline `auth_token` field. The web server binds to loopback by default and enforces Host header validation to prevent DNS rebinding attacks.
+The `[web]` section in `runner.toml` configures the web configurator server started via `runner web`. When `auth_mode = "token"`, all API endpoints require a bearer token. The token is resolved from the env var named in `auth_token_env` first, then from the inline `auth_token` field. The web server binds to loopback by default and enforces Host header validation to prevent DNS rebinding attacks. On wildcard binds, it still accepts `localhost` and the machine's own hostname on the configured port.
 
 ### `RunnerUserConfig` (User-scoped)
 
