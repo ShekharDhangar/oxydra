@@ -738,7 +738,7 @@ All four are Rust-based AI agent runtimes that emerged from the "\*Claw" ecosyst
 | **Language** | Rust | Rust | Rust | Rust |
 | **Version** | 0.1.2 | ~0.1.x | 0.12.0 | ~0.1.x |
 | **Maturity** | Pre-alpha | Early | Most mature | Early |
-| **Primary focus** | Secure isolated agent orchestrator that evovles and learns | Ultra-lightweight personal bot | Secure always-on agent | Multi-channel chat bot |
+| **Primary focus** | Secure isolated agent orchestrator that evolves and learns | Ultra-lightweight personal bot | Secure always-on agent | Multi-channel chat bot |
 
 ---
 
