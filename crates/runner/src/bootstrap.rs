@@ -50,8 +50,7 @@ pub struct ConfigSearchPaths {
 }
 
 impl ConfigSearchPaths {
-    pub fn discover() -> Result<Self, BootstrapError> {
-        let workspace_dir = env::current_dir()?.join(WORKSPACE_CONFIG_DIR);
+    fn from_workspace_dir(workspace_dir: PathBuf) -> Self {
         let (user_dir, user_home_dir) = env::var_os("HOME")
             .map(PathBuf::from)
             .map(|home| {
@@ -61,12 +60,31 @@ impl ConfigSearchPaths {
                 )
             })
             .unwrap_or((None, None));
-        Ok(Self {
+        Self {
             system_dir: PathBuf::from(SYSTEM_CONFIG_DIR),
             user_dir,
             user_home_dir,
             workspace_dir,
-        })
+        }
+    }
+
+    pub fn discover() -> Result<Self, BootstrapError> {
+        Ok(Self::from_workspace_dir(
+            env::current_dir()?.join(WORKSPACE_CONFIG_DIR),
+        ))
+    }
+
+    pub fn from_runner_config_path(path: &Path) -> Result<Self, BootstrapError> {
+        let workspace_dir = if let Some(parent) = path.parent() {
+            if parent.as_os_str().is_empty() {
+                env::current_dir()?.join(WORKSPACE_CONFIG_DIR)
+            } else {
+                parent.to_path_buf()
+            }
+        } else {
+            env::current_dir()?.join(WORKSPACE_CONFIG_DIR)
+        };
+        Ok(Self::from_workspace_dir(workspace_dir))
     }
 }
 
@@ -1397,7 +1415,9 @@ remote_url = "libsql://example-org.turso.io"
 
     #[tokio::test]
     async fn build_memory_backend_returns_none_when_memory_is_disabled() {
-        let backend = build_memory_backend(&AgentConfig::default(), None)
+        let mut config = AgentConfig::default();
+        config.memory.enabled = false;
+        let backend = build_memory_backend(&config, None)
             .await
             .expect("disabled memory config should not fail");
         assert!(backend.is_none());
@@ -1948,6 +1968,8 @@ remote_url = "libsql://example-org.turso.io"
             AGENT_CONFIG_FILE_NAME,
             r#"
 config_version = "1.0.0"
+[memory]
+enabled = false
 [selection]
 provider = "openai"
 model = "gpt-4o-mini"
@@ -2035,6 +2057,8 @@ api_key = "test-openai-key"
             AGENT_CONFIG_FILE_NAME,
             r#"
 config_version = "1.0.0"
+[memory]
+enabled = false
 [selection]
 provider = "openai"
 model = "gpt-4o-mini"
@@ -2075,6 +2099,8 @@ model = "gpt-4o-mini"
             AGENT_CONFIG_FILE_NAME,
             r#"
 config_version = "1.0.0"
+[memory]
+enabled = false
 [selection]
 provider = "openai"
 model = "gpt-4o-mini"

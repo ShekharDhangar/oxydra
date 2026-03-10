@@ -51,7 +51,8 @@ config_version = "1.0.1"
 #   1. Create a bot via @BotFather on Telegram and obtain a bot token
 #   2. Set the token as an environment variable (e.g. export ALICE_TELEGRAM_BOT_TOKEN=...)
 #   3. Find your Telegram user ID (e.g. using @userinfobot)
-#   4. Uncomment and fill in the config below
+#   4. Ensure [memory] enabled = true in agent.toml (Telegram session storage requires memory)
+#   5. Uncomment and fill in the config below
 
 # [channels.telegram]
 # enabled = true

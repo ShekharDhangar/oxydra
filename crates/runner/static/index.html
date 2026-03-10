@@ -492,20 +492,20 @@
             <!-- Step 3: Register First User -->
             <div x-show="onboardingWizard.step === 3">
               <h3 class="wizard-step-title">Register First User</h3>
-              <p class="wizard-step-desc">Create your first user account. The User ID is used to identify the user in
-                the system and start/stop their daemon.</p>
+              <p class="wizard-step-desc">Choose the user name you want to use. Oxydra will keep the config file under
+                <code>users/&lt;name&gt;.toml</code>, and on a fresh install it will rename the built-in
+                <code>alice</code> user and file for you automatically.</p>
               <label class="wizard-field-label">
                 <span>User ID</span>
                 <input type="text" class="text-input" :value="onboardingWizard.userId"
-                  @input="onboardingWizard.userId = $event.target.value" @keydown.enter="onboardingNextStep()"
-                  placeholder="default">
+                  @input="onboardingUserIdInput($event.target.value)" @keydown.enter="onboardingNextStep()"
+                  placeholder="alice">
               </label>
-              <label class="wizard-field-label">
-                <span>User Config Path <span class="wizard-hint">(relative to runner config directory)</span></span>
-                <input type="text" class="text-input" :value="onboardingWizard.userConfigPath"
-                  @input="onboardingWizard.userConfigPath = $event.target.value" @keydown.enter="onboardingNextStep()">
-              </label>
-              <button class="btn btn-muted btn-sm" @click="onboardingAutofillUserPath()">Auto-fill from User ID</button>
+              <p class="text-muted">User config file: <code x-text="onboardingWizard.userConfigPath"></code></p>
+              <p class="text-muted" x-show="onboardingWizard.canRenameDefaultUser">
+                The existing built-in file <code>users/alice.toml</code> will be renamed automatically when you pick a
+                different user name here.
+              </p>
             </div>
 
             <!-- Step 4: Provider Setup -->

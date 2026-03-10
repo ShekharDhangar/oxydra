@@ -77,7 +77,7 @@ Controls persistence, retrieval, and embedding backend:
 
 | Field | Default | Purpose |
 |-------|---------|---------|
-| `enabled` | false | Whether memory persistence is active |
+| `enabled` | true | Whether memory persistence is active |
 | `remote_url` | (none) | Optional Turso remote URL |
 | `auth_token` | (none) | Required if `remote_url` is set |
 | `embedding_backend` | `model2vec` | Embedding strategy: `model2vec` (semantic) or `deterministic` (hash-based) |
@@ -312,6 +312,7 @@ pub struct SchedulerConfig {
 - Scheduling is disabled by default and must be explicitly enabled.
 - `max_turns` and `max_cost` are operator-only configuration — they are not exposed in any tool schema. The LLM cannot override execution budgets for scheduled runs.
 - The scheduler requires the memory backend to be enabled, as schedule definitions and run history are stored in the same libSQL database.
+- Telegram channel adapters also require the memory backend, because channel session mappings and session persistence use the same session store.
 
 ### `ShellConfig`
 

@@ -9,6 +9,7 @@ fn default_agent_config_is_valid() {
     assert_eq!(config.selection.provider, ProviderId::from("openai"));
     assert_eq!(config.selection.model, ModelId::from("gpt-4o-mini"));
     assert_eq!(config.memory, MemoryConfig::default());
+    assert!(config.memory.enabled);
     assert_eq!(
         config.memory.embedding_backend,
         MemoryEmbeddingBackend::Model2vec
@@ -20,6 +21,7 @@ fn default_agent_config_is_valid() {
 #[test]
 fn default_memory_embedding_config_uses_model2vec_potion_32m() {
     let config = MemoryConfig::default();
+    assert!(config.enabled);
     assert_eq!(config.embedding_backend, MemoryEmbeddingBackend::Model2vec);
     assert_eq!(config.model2vec_model, Model2vecModel::Potion32m);
 }

@@ -145,7 +145,8 @@ impl Runner {
     ) -> Result<RunnerStartup, RunnerError> {
         let user_id = validate_user_id(&request.user_id)?.to_owned();
         let user_config = self.load_user_config(&user_id)?;
-        let agent_tools = load_agent_tools_config();
+        let host_config_paths = self.host_config_search_paths()?;
+        let agent_tools = load_agent_tools_config_with_paths(&host_config_paths);
         let workspace = self.provision_user_workspace(&user_id)?;
         let effective_launch_settings =
             resolve_effective_launch_settings(&workspace, &user_config)?;
@@ -199,15 +200,15 @@ impl Runner {
         // the config (api_key_env, etc.) to forward into the oxydra-vm container.
         // Shell-vm gets a separate set of env vars to avoid leaking API keys.
         let (mut extra_env, mut shell_env) = if sandbox_tier != SandboxTier::Process {
-            copy_agent_config_to_workspace(&workspace)?;
-            let mut config_env = collect_config_env_vars();
+            copy_agent_config_to_workspace_with_paths(&workspace, &host_config_paths)?;
+            let mut config_env = collect_config_env_vars_with_paths(&host_config_paths);
             // Also forward bot token env vars from channel config.
             // Pass CLI extra_env so we can suppress false warnings when the token
             // is already being forwarded via -e / --env-file.
             let bot_token_env =
                 collect_channel_bot_token_env_vars(&user_config.channels, &request.extra_env);
             config_env.extend(bot_token_env);
-            let shell_config_env = collect_shell_config_env_keys();
+            let shell_config_env = collect_shell_config_env_keys_with_paths(&host_config_paths);
             (config_env, shell_config_env)
         } else {
             (Vec::new(), Vec::new())
@@ -420,6 +421,15 @@ impl Runner {
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."))
     }
+
+    fn host_config_search_paths(&self) -> Result<bootstrap::ConfigSearchPaths, RunnerError> {
+        bootstrap::ConfigSearchPaths::from_runner_config_path(&self.global_config_path).map_err(
+            |source| RunnerError::ProvisionWorkspace {
+                path: self.config_root_dir(),
+                source: io::Error::other(source.to_string()),
+            },
+        )
+    }
 }
 
 pub fn load_runner_global_config(
@@ -456,9 +466,10 @@ pub fn load_runner_user_config(path: impl AsRef<Path>) -> Result<RunnerUserConfi
     Ok(config)
 }
 
-fn load_agent_tools_config() -> types::ToolsConfig {
-    let host_paths = bootstrap::ConfigSearchPaths::discover().ok();
-    let agent_config = host_paths.as_ref().and_then(|paths| {
+fn load_agent_tools_config_with_paths(
+    host_paths: &bootstrap::ConfigSearchPaths,
+) -> types::ToolsConfig {
+    let agent_config = Some(host_paths).and_then(|paths| {
         bootstrap::load_agent_config_with_paths(paths, None, bootstrap::CliOverrides::default())
             .ok()
     });
@@ -2688,23 +2699,6 @@ fn write_bootstrap_file(
     Ok(bootstrap_path)
 }
 
-/// Materialize the host's effective merged agent configuration into the user's
-/// workspace internal directory (`<workspace>/.oxydra/agent.toml`).
-///
-/// The guest runtime only reads config from its mounted workspace, so this
-/// ensures settings from all host search paths (system/user/workspace) are
-/// preserved consistently during startup.
-fn copy_agent_config_to_workspace(workspace: &UserWorkspace) -> Result<(), RunnerError> {
-    let host_paths = bootstrap::ConfigSearchPaths::discover().map_err(|source| {
-        RunnerError::ProvisionWorkspace {
-            path: workspace.internal.clone(),
-            source: io::Error::other(source.to_string()),
-        }
-    })?;
-
-    copy_agent_config_to_workspace_with_paths(workspace, &host_paths)
-}
-
 fn copy_agent_config_to_workspace_with_paths(
     workspace: &UserWorkspace,
     host_paths: &bootstrap::ConfigSearchPaths,
@@ -2746,8 +2740,9 @@ fn copy_agent_config_to_workspace_with_paths(
 /// registry and web-search config, plus well-known provider-type defaults
 /// (e.g. `OPENAI_API_KEY`), look up the value in the runner's own environment
 /// and return `KEY=VALUE` pairs for variables that are set.
-fn collect_config_env_vars() -> Vec<String> {
-    let agent_config = match load_agent_config(None, CliOverrides::default()) {
+fn collect_config_env_vars_with_paths(host_paths: &bootstrap::ConfigSearchPaths) -> Vec<String> {
+    let agent_config = match load_agent_config_with_paths(host_paths, None, CliOverrides::default())
+    {
         Ok(config) => config,
         Err(_) => return Vec::new(),
     };
@@ -2793,8 +2788,11 @@ fn collect_config_env_vars() -> Vec<String> {
 /// the agent config. For each listed key name that is set in the runner's own
 /// environment, returns a `KEY=VALUE` pair for injection into the shell-vm
 /// container.
-fn collect_shell_config_env_keys() -> Vec<String> {
-    let agent_config = match load_agent_config(None, CliOverrides::default()) {
+fn collect_shell_config_env_keys_with_paths(
+    host_paths: &bootstrap::ConfigSearchPaths,
+) -> Vec<String> {
+    let agent_config = match load_agent_config_with_paths(host_paths, None, CliOverrides::default())
+    {
         Ok(config) => config,
         Err(_) => return Vec::new(),
     };

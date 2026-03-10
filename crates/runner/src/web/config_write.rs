@@ -45,10 +45,27 @@ struct CreateUserRequest {
     config_path: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct RenameUserRequest {
+    old_user_id: String,
+    new_user_id: String,
+    new_config_path: String,
+}
+
 #[derive(Debug, Serialize)]
 struct CreateUserResponse {
     user_id: String,
     config_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    backup_path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct RenameUserResponse {
+    user_id: String,
+    config_path: String,
+    previous_user_id: String,
+    previous_config_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     backup_path: Option<String>,
 }
@@ -353,6 +370,145 @@ pub async fn create_user(
     ok_response(CreateUserResponse {
         user_id,
         config_path: request.config_path.trim().to_owned(),
+        backup_path: runner_backup.map(|path| path.display().to_string()),
+    })
+    .into_response()
+}
+
+/// `POST /api/v1/config/users/rename` — Rename a registered user and optionally move the user config file.
+pub async fn rename_user(
+    State(state): State<Arc<WebState>>,
+    payload: Result<Json<JsonValue>, JsonRejection>,
+) -> impl IntoResponse {
+    let raw_json = match parse_json_payload(payload) {
+        Ok(payload) => payload,
+        Err(error) => return error.into_response(),
+    };
+    let request: RenameUserRequest = match serde_json::from_value(raw_json) {
+        Ok(request) => request,
+        Err(error) => {
+            return invalid_request(format!("invalid user rename payload: {error}"))
+                .into_response();
+        }
+    };
+
+    let old_user_id = match validate_user_id(&request.old_user_id) {
+        Ok(user_id) => user_id.to_owned(),
+        Err(error) => return invalid_request(error).into_response(),
+    };
+    let new_user_id = match validate_user_id(&request.new_user_id) {
+        Ok(user_id) => user_id.to_owned(),
+        Err(error) => return invalid_request(error).into_response(),
+    };
+    if request.new_config_path.trim().is_empty() {
+        return invalid_request("`new_config_path` must not be empty").into_response();
+    }
+
+    let runner_snapshot = state.latest_global_config_or_cached();
+    let Some(existing_registration) = runner_snapshot.users.get(&old_user_id) else {
+        return not_found(format!("User `{old_user_id}` is not registered")).into_response();
+    };
+    if old_user_id != new_user_id && runner_snapshot.users.contains_key(&new_user_id) {
+        return invalid_request(format!("User `{new_user_id}` is already registered"))
+            .into_response();
+    }
+
+    let previous_config_path = existing_registration.config_path.clone();
+    let new_config_path = request.new_config_path.trim().to_owned();
+    let old_user_config_path = state.resolve_user_config_path(&previous_config_path);
+    let new_user_config_path = state.resolve_user_config_path(&new_config_path);
+
+    if old_user_config_path != new_user_config_path && new_user_config_path.exists() {
+        return invalid_request(format!(
+            "User config file already exists at `{}`",
+            new_user_config_path.display()
+        ))
+        .into_response();
+    }
+
+    let runner_patch = if old_user_id == new_user_id {
+        json!({
+            "users": {
+                old_user_id.clone(): {
+                    "config_path": new_config_path.clone(),
+                }
+            }
+        })
+    } else {
+        json!({
+            "users": {
+                old_user_id.clone(): JsonValue::Null,
+                new_user_id.clone(): {
+                    "config_path": new_config_path.clone(),
+                }
+            }
+        })
+    };
+
+    let prepared_runner =
+        match prepare_patch::<RunnerGlobalConfig, _>(&state.config_path, &runner_patch, |cfg| {
+            cfg.validate()
+        }) {
+            Ok(prepared) => prepared,
+            Err(error) => return error.into_response(),
+        };
+
+    let new_user_parent = match new_user_config_path.parent() {
+        Some(parent) => parent,
+        None => {
+            return config_write_failed(format!(
+                "cannot determine parent directory for `{}`",
+                new_user_config_path.display()
+            ))
+            .into_response();
+        }
+    };
+    if let Err(error) = fs::create_dir_all(new_user_parent) {
+        return config_write_failed(format!(
+            "failed to create user config directory `{}`: {error}",
+            new_user_parent.display()
+        ))
+        .into_response();
+    }
+
+    let moved_user_file =
+        old_user_config_path.exists() && old_user_config_path != new_user_config_path;
+    if moved_user_file && let Err(error) = fs::rename(&old_user_config_path, &new_user_config_path)
+    {
+        return config_write_failed(format!(
+            "failed to rename user config `{}` to `{}`: {error}",
+            old_user_config_path.display(),
+            new_user_config_path.display()
+        ))
+        .into_response();
+    }
+
+    let runner_backup = match persist_patch(&state.config_path, &prepared_runner) {
+        Ok(path) => path,
+        Err(error) => {
+            if moved_user_file {
+                let _ = fs::rename(&new_user_config_path, &old_user_config_path);
+            }
+            return error.into_response();
+        }
+    };
+
+    tracing::info!(
+        endpoint = "POST /config/users/rename",
+        old_user_id = %old_user_id,
+        new_user_id = %new_user_id,
+        previous_config_path = %previous_config_path,
+        new_config_path = %new_config_path,
+        backup_path = ?runner_backup.as_ref().map(|p| p.display().to_string()),
+        result = "success",
+        "web configurator: user renamed"
+    );
+
+    ok_response(RenameUserResponse {
+        user_id: new_user_id,
+        config_path: new_config_path,
+        previous_user_id: old_user_id,
+        previous_config_path,
         backup_path: runner_backup.map(|path| path.display().to_string()),
     })
     .into_response()
@@ -1496,6 +1652,70 @@ items = ["a", "b"]
         .unwrap();
         let resp2 = app.oneshot(create2).await.unwrap();
         assert_eq!(resp2.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn rename_user_moves_registration_and_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("runner.toml");
+        fs::write(
+            &config_path,
+            r#"
+config_version = "1.0.1"
+workspace_root = "workspaces"
+
+[users.alice]
+config_path = "users/alice.toml"
+"#,
+        )
+        .unwrap();
+        let user_dir = dir.path().join("users");
+        fs::create_dir_all(&user_dir).unwrap();
+        fs::write(user_dir.join("alice.toml"), "config_version = \"1.0.1\"\n").unwrap();
+
+        let mut config = RunnerGlobalConfig::default();
+        config.users.insert(
+            "alice".to_owned(),
+            types::RunnerUserRegistration {
+                config_path: "users/alice.toml".to_owned(),
+            },
+        );
+        let state = Arc::new(WebState::new(
+            config,
+            config_path.clone(),
+            "127.0.0.1:9400".to_owned(),
+        ));
+        let app = crate::web::build_router(state);
+
+        let request = with_api_headers(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/config/users/rename"),
+        )
+        .body(Body::from(
+            json!({
+                "old_user_id": "alice",
+                "new_user_id": "newuser",
+                "new_config_path": "users/newuser.toml"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let runner_contents = fs::read_to_string(&config_path).unwrap();
+        assert!(runner_contents.contains("[users.newuser]"));
+        assert!(runner_contents.contains("config_path = \"users/newuser.toml\""));
+        assert!(!runner_contents.contains("[users.alice]"));
+
+        assert!(!dir.path().join("users/alice.toml").exists());
+        let new_user_path = dir.path().join("users/newuser.toml");
+        assert!(new_user_path.exists());
+        assert_eq!(
+            fs::read_to_string(new_user_path).unwrap(),
+            "config_version = \"1.0.1\"\n"
+        );
     }
 
     #[tokio::test]

@@ -858,7 +858,7 @@ fn agent_memory_section() -> SchemaSection {
         fields: vec![
             SchemaField {
                 description: Some("Enable persistent conversational memory".into()),
-                default: Some(Value::Bool(false)),
+                default: Some(Value::Bool(true)),
                 ..fld("memory.enabled", "Enable Memory", "boolean")
             },
             SchemaField {
@@ -1688,7 +1688,10 @@ fn user_behavior_section() -> SchemaSection {
 
 fn user_telegram_section() -> SchemaSection {
     SchemaSection {
-        description: Some("Telegram bot channel adapter settings".into()),
+        description: Some(
+            "Telegram bot channel adapter settings. Requires memory to be enabled in agent config."
+                .into(),
+        ),
         group: Some("channels".into()),
         group_label: Some("Channels".into()),
         group_description: Some("Communication channel settings".into()),
@@ -1697,7 +1700,10 @@ fn user_telegram_section() -> SchemaSection {
         toggle_off_label: Some("Disabled".into()),
         fields: vec![
             SchemaField {
-                description: Some("Activate the Telegram channel adapter".into()),
+                description: Some(
+                    "Activate the Telegram channel adapter. Requires memory to be enabled in agent config."
+                        .into(),
+                ),
                 default: Some(Value::Bool(false)),
                 ..fld("channels.telegram.enabled", "Enabled", "boolean")
             },
@@ -2278,6 +2284,50 @@ mod tests {
         assert!(
             auth_token.nullable,
             "auth_token should be nullable (Option<String>)"
+        );
+    }
+
+    #[test]
+    fn memory_and_telegram_schema_defaults_match_runtime_requirements() {
+        let agent_schema = build_agent_schema();
+        let memory = agent_schema
+            .sections
+            .iter()
+            .find(|s| s.id == "memory")
+            .unwrap();
+        let memory_enabled = memory
+            .fields
+            .iter()
+            .find(|f| f.path == "memory.enabled")
+            .unwrap();
+        assert_eq!(memory_enabled.default, Some(Value::Bool(true)));
+
+        let user_schema = build_user_schema();
+        let telegram = user_schema
+            .sections
+            .iter()
+            .find(|s| s.id == "channels.telegram")
+            .unwrap();
+        assert!(
+            telegram
+                .description
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Requires memory"),
+            "telegram section should mention the memory requirement"
+        );
+        let telegram_enabled = telegram
+            .fields
+            .iter()
+            .find(|f| f.path == "channels.telegram.enabled")
+            .unwrap();
+        assert!(
+            telegram_enabled
+                .description
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Requires memory"),
+            "telegram enable field should mention the memory requirement"
         );
     }
 

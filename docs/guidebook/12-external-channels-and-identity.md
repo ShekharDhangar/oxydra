@@ -97,6 +97,8 @@ platform_ids = ["87654321", "11223344"]  # Bob has two Telegram accounts
 display_name = "Bob"
 ```
 
+Telegram requires `[memory] enabled = true` in `agent.toml` because channel session mappings and resumed sessions use the shared session store.
+
 ### Bootstrap Propagation
 
 The `RunnerBootstrapEnvelope` includes an optional `channels: Option<ChannelsConfig>` field. The runner populates it from the user's config and also forwards bot token environment variables to the VM container alongside existing API key env vars.
@@ -119,6 +121,7 @@ let bootstrap = RunnerBootstrapEnvelope {
 - `RunnerUserConfig.channels` defaults to empty (no channels enabled)
 - `TelegramChannelConfig.enabled` defaults to `false`
 - `TelegramChannelConfig.senders` defaults to empty vec (nobody can interact)
+- Telegram adapters require the agent memory backend to be enabled because session mappings are stored in the shared session store
 - Channels config is per-user because bot tokens and sender bindings differ per user
 - Agent behavior config (`agent.toml`) remains separate — channels config doesn't belong there
 

@@ -342,7 +342,9 @@ Even in `--insecure` mode, WASM tool policies still enforce path boundaries and 
 export ALICE_TELEGRAM_BOT_TOKEN=your-bot-token
 ```
 
-4. Edit `.oxydra/users/alice.toml` and add/uncomment:
+4. Ensure `.oxydra/agent.toml` has `[memory] enabled = true`. Current templates enable memory by default; only change this if you disabled it manually.
+
+5. Edit `.oxydra/users/alice.toml` and add/uncomment:
 
 ```toml
 [channels.telegram]
@@ -353,7 +355,7 @@ bot_token_env = "ALICE_TELEGRAM_BOT_TOKEN"
 platform_ids = ["12345678"]
 ```
 
-5. Restart the runner and message your bot in Telegram.
+6. Restart the runner and message your bot in Telegram.
 
 Only IDs listed in `[[channels.telegram.senders]]` are allowed to interact with your agent.
 Telegram supports the same session commands (`/new`, `/sessions`, `/switch`, `/cancel`, `/cancelall`, `/status`).
@@ -394,7 +396,7 @@ auth_token_env = "OXYDRA_WEB_TOKEN"
 | Docker unreachable / `client error (Connect)` | Start Docker (`sudo systemctl start docker`); for Colima set `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` |
 | `Permission denied` accessing Docker socket | Add your user to the docker group: `sudo usermod -aG docker $USER` then run `newgrp docker` or log out and back in |
 | `pull_image` fails with `manifest unknown` or 404 | Check the tag in `runner.toml` includes the `v` prefix (e.g. `v0.2.5` not `0.1.2`); see [published images](https://github.com/shantanugoel/oxydra/pkgs/container/oxydra-vm) for available tags |
-| Telegram bot does not respond | Verify `bot_token_env` points to an exported token and your Telegram user ID is listed in `[[channels.telegram.senders]]` |
+| Telegram bot does not respond | Verify `bot_token_env` points to an exported token, your Telegram user ID is listed in `[[channels.telegram.senders]]`, and `[memory] enabled = true` in `agent.toml` |
 | `micro_vm` start fails on macOS | Ensure Docker Desktop is installed and running |
 | `micro_vm` start fails on Linux (`firecracker` or config error) | Install `firecracker` and set `guest_images.firecracker_oxydra_vm_config` (and `guest_images.firecracker_shell_vm_config` for sidecar) |
 | `unknown model for catalog provider` | Use `runner catalog show` to inspect known models, or set `catalog.skip_catalog_validation = true` |

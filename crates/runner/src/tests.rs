@@ -62,6 +62,25 @@ impl Drop for EnvVarGuard {
     }
 }
 
+#[derive(Debug)]
+struct CurrentDirGuard {
+    previous: PathBuf,
+}
+
+impl CurrentDirGuard {
+    fn set(path: &Path) -> Self {
+        let previous = env::current_dir().expect("current dir should be readable");
+        env::set_current_dir(path).expect("current dir should be switchable for test");
+        Self { previous }
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        env::set_current_dir(&self.previous).expect("current dir should restore");
+    }
+}
+
 #[derive(Debug, Default)]
 struct MockSandboxBackend {
     launches: Mutex<Vec<SandboxLaunchRequest>>,
@@ -1494,6 +1513,90 @@ api_key = "test-gemini-key"
 }
 
 #[test]
+fn startup_uses_runner_config_directory_for_host_agent_config_resolution() {
+    let _env_lock = env_lock().lock().unwrap_or_else(|error| error.into_inner());
+    let _gemini_key = EnvVarGuard::set("GEMINI_API_KEY", "gemini-test-key");
+    let _openai_key = EnvVarGuard::set("OPENAI_API_KEY", "openai-test-key");
+
+    let install_root = temp_dir("host-config-resolution");
+    let config_dir = install_root.join(".oxydra");
+    let global_path = write_runner_config_fixture(&config_dir, "container");
+    fs::write(
+        config_dir.join("agent.toml"),
+        r#"
+config_version = "1.0.0"
+
+[selection]
+provider = "google-aistudio"
+model = "gemini-2.0-flash"
+
+[catalog]
+skip_catalog_validation = true
+
+[providers.registry.google-aistudio]
+provider_type = "gemini"
+api_key_env = "GEMINI_API_KEY"
+"#
+        .trim_start(),
+    )
+    .expect("install agent config should be writable");
+    write_user_config(&config_dir.join("users/alice.toml"), "");
+
+    let foreign_root = temp_dir("host-config-foreign-cwd");
+    fs::create_dir_all(foreign_root.join(".oxydra")).expect("foreign cwd config dir should exist");
+    fs::write(
+        foreign_root.join(".oxydra/agent.toml"),
+        r#"
+config_version = "1.0.0"
+
+[selection]
+provider = "openai"
+model = "gpt-4o-mini"
+
+[providers.registry.openai]
+provider_type = "openai"
+api_key_env = "OPENAI_API_KEY"
+"#
+        .trim_start(),
+    )
+    .expect("foreign cwd agent config should be writable");
+
+    let _cwd_guard = CurrentDirGuard::set(&foreign_root);
+    let backend = Arc::new(MockSandboxBackend::default());
+    let runner = Runner::from_global_config_path_with_backend(&global_path, backend.clone())
+        .expect("runner should initialize");
+    let startup = runner
+        .start_user_for_host(RunnerStartRequest::new("alice"), "linux")
+        .expect("startup should succeed");
+
+    let materialized = fs::read_to_string(startup.workspace.internal.join("agent.toml"))
+        .expect("materialized agent config should be readable");
+    let materialized_config: types::AgentConfig =
+        toml::from_str(&materialized).expect("materialized agent config should parse");
+    assert_eq!(
+        materialized_config.selection.provider,
+        types::ProviderId::from("google-aistudio")
+    );
+    assert_eq!(
+        materialized_config.selection.model,
+        types::ModelId::from("gemini-2.0-flash")
+    );
+
+    let launches = backend.recorded_launches();
+    assert_eq!(launches.len(), 1);
+    let extra_env = &launches[0].extra_env;
+    assert!(
+        extra_env
+            .iter()
+            .any(|entry| entry == "GEMINI_API_KEY=gemini-test-key"),
+        "runtime env should forward GEMINI_API_KEY from the install config, got: {extra_env:?}"
+    );
+
+    let _ = fs::remove_dir_all(install_root);
+    let _ = fs::remove_dir_all(foreign_root);
+}
+
+#[test]
 fn container_tier_launch_request_includes_extra_env() {
     let root = temp_dir("container-extra-env");
     let global_path = write_runner_config_fixture(&root, "container");
@@ -2537,6 +2640,17 @@ fn browser_config_in_bootstrap_envelope_round_trips() {
 fn startup_with_browser_enabled_populates_browser_env_in_shell_vm() {
     let root = temp_dir("browser-env");
     let global_path = write_runner_config_fixture(&root, "container");
+    fs::write(
+        root.join("agent.toml"),
+        r#"
+[memory]
+enabled = false
+
+[tools.browser]
+enabled = true
+"#,
+    )
+    .expect("agent config should be writable");
     write_user_config(
         &root.join("users/alice.toml"),
         r#"

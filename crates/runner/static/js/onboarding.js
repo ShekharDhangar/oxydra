@@ -39,7 +39,7 @@
   function inferDefaultUserConfigPath(userId) {
     const trimmed = (userId || '').trim();
     if (!trimmed) {
-      return 'users/default.toml';
+      return 'users/alice.toml';
     }
     return `users/${trimmed}.toml`;
   }
@@ -48,8 +48,12 @@
     return {
       step: 1,
       runnerWorkspaceRoot: 'workspaces',
-      userId: 'default',
-      userConfigPath: 'users/default.toml',
+      userId: 'alice',
+      userConfigPath: 'users/alice.toml',
+      existingUserId: '',
+      existingUserConfigPath: '',
+      canRenameDefaultUser: false,
+      userRenamedFrom: '',
       providerName: 'openai',
       providerType: 'openai',
       providerApiKey: '',

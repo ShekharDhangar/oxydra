@@ -28,50 +28,56 @@ USER oxydra:oxydra
 ENTRYPOINT ["/usr/local/bin/oxydra-vm"]
 
 # --- shell-vm (shell-daemon sidecar) image ---
-FROM alpine:3 AS shell-vm
+# Use Debian for glibc compatibility with third-party browser tooling such as
+# Pinchtab. Our own binaries are built as Linux musl targets, so they remain
+# portable across both Alpine and Debian-based images.
+FROM debian:trixie-slim AS shell-vm
 
 ARG BINARY
 ARG PINCHTAB_VERSION=0.7.6
 
-RUN apk add --no-cache \
-    # essentials
-    ca-certificates \
-    curl \
-    # shell & scripting
-    bash \
-    jq \
-    python3 \
-    py3-pip \
-    py3-setuptools \
-    # file operations
-    git \
-    unzip \
-    tar \
-    file \
-    ripgrep \
-    fd \
-    # text processing — GNU tools for LLM agent compatibility (replace BusyBox applets)
-    grep \
-    gawk \
-    sed \
-    # network tools
-    bind-tools \
-    netcat-openbsd \
-    socat \
-    # process tools
-    procps \
-    lsof \
-    # build basics (agents often need to compile/run things)
-    make \
-    gcc \
-    musl-dev \
-    # Browser
-    nss \
-    tzdata \
-    ttf-freefont \
-    chromium \
-    && addgroup -S oxydra \
-    && adduser -S -D -H -G oxydra oxydra
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        # essentials
+        bash \
+        ca-certificates \
+        curl \
+        # shell & scripting
+        jq \
+        python3 \
+        python3-pip \
+        python3-setuptools \
+        # file operations
+        file \
+        fd-find \
+        git \
+        ripgrep \
+        tar \
+        unzip \
+        # text processing
+        gawk \
+        grep \
+        sed \
+        # network tools
+        dnsutils \
+        netcat-openbsd \
+        socat \
+        # process tools
+        lsof \
+        procps \
+        # build basics (agents often need to compile/run things)
+        gcc \
+        libc6-dev \
+        make \
+        # Browser
+        chromium \
+        fonts-freefont-ttf \
+        libnss3 \
+        tzdata \
+    && groupadd --system oxydra \
+    && useradd --system --no-create-home --gid oxydra oxydra \
+    && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
+    && rm -rf /var/lib/apt/lists/*
 
 # Download Pinchtab binary for the target architecture.
 RUN ARCH=$(uname -m) && \

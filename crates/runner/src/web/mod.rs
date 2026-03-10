@@ -116,6 +116,7 @@ pub fn build_router(state: Arc<WebState>) -> Router {
             "/config/users",
             get(config_read::list_users).post(config_write::create_user),
         )
+        .route("/config/users/rename", post(config_write::rename_user))
         .route(
             "/config/users/{user_id}",
             get(config_read::get_user_config)

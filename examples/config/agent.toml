@@ -85,8 +85,9 @@ max_concurrent_turns_per_user = 10
 session_idle_ttl_hours = 48
 
 # --- Memory (libSQL-backed persistence) ---
+# Required for Telegram channel sessions and scheduler persistence.
 [memory]
-enabled = false
+enabled = true
 # remote_url = "libsql://your-database.turso.io"  # Optional Turso remote
 # auth_token = "set-me-or-use-OXYDRA__MEMORY__AUTH_TOKEN"  # Required when remote_url is set
 

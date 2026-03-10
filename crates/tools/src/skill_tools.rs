@@ -248,14 +248,12 @@ fn resolve_skill_path_by_metadata(
         // Folder-based skill: subdirectory with SKILL.md inside.
         if path.is_dir() {
             let skill_file = path.join("SKILL.md");
-            if skill_file.is_file() {
-                if let Ok(raw) = std::fs::read_to_string(&skill_file) {
-                    if let Ok(skill) = validate_skill_content(&raw, &skill_file) {
-                        if skill.metadata.name == name {
-                            return Ok(Some((skill_file, skill)));
-                        }
-                    }
-                }
+            if skill_file.is_file()
+                && let Ok(raw) = std::fs::read_to_string(&skill_file)
+                && let Ok(skill) = validate_skill_content(&raw, &skill_file)
+                && skill.metadata.name == name
+            {
+                return Ok(Some((skill_file, skill)));
             }
             continue;
         }
@@ -265,14 +263,11 @@ fn resolve_skill_path_by_metadata(
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("md"))
             && path.is_file()
+            && let Ok(raw) = std::fs::read_to_string(&path)
+            && let Ok(skill) = validate_skill_content(&raw, &path)
+            && skill.metadata.name == name
         {
-            if let Ok(raw) = std::fs::read_to_string(&path) {
-                if let Ok(skill) = validate_skill_content(&raw, &path) {
-                    if skill.metadata.name == name {
-                        return Ok(Some((path, skill)));
-                    }
-                }
-            }
+            return Ok(Some((path, skill)));
         }
     }
 

@@ -38,20 +38,25 @@ USER oxydra:oxydra
 ENTRYPOINT ["/usr/local/bin/oxydra-vm"]
 
 # --- shell-vm (shell-daemon sidecar) image ---
-FROM alpine:3 AS shell-vm
+# Use Debian for glibc compatibility with third-party browser tooling such as
+# Pinchtab. Our own binaries are built as Linux musl targets, so they remain
+# portable across both Alpine and Debian-based images.
+FROM debian:trixie-slim AS shell-vm
 
 ARG PINCHTAB_VERSION=0.7.6
 
-RUN apk add --no-cache \
-    ca-certificates \
-    curl \
-    jq \
-    nss \
-    tzdata \
-    ttf-freefont \
-    chromium \
-    && addgroup -S oxydra \
-    && adduser -S -D -H -G oxydra oxydra
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        chromium \
+        curl \
+        fonts-freefont-ttf \
+        jq \
+        libnss3 \
+        tzdata \
+    && groupadd --system oxydra \
+    && useradd --system --no-create-home --gid oxydra oxydra \
+    && rm -rf /var/lib/apt/lists/*
 
 # Download Pinchtab binary for the target architecture.
 RUN ARCH=$(uname -m) && \

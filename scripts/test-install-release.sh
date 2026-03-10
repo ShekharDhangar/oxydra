@@ -382,6 +382,8 @@ EOF
 
   cat > "${payload_dir}/examples/config/agent.toml" <<'EOF'
 config_version = "1.0.0"
+[memory]
+enabled = true
 [selection]
 provider = "openai"
 model = "gpt-4o-mini"

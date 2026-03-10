@@ -350,7 +350,7 @@ pub struct MemoryConfig {
 impl Default for MemoryConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             remote_url: None,
             auth_token: None,
             embedding_backend: default_memory_embedding_backend(),
@@ -1372,6 +1372,7 @@ mod tests {
         let config = AgentConfig::default();
         config.validate().expect("default config should validate");
         assert_eq!(config.runtime.max_turns, 100);
+        assert!(config.memory.enabled);
         assert_eq!(
             config.tools.shell,
             Some(ShellConfig {

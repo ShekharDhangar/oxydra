@@ -209,8 +209,12 @@ function onboardingFactory() {
   return {
     step: 1,
     runnerWorkspaceRoot: 'workspaces',
-    userId: 'default',
-    userConfigPath: 'users/default.toml',
+    userId: 'alice',
+    userConfigPath: 'users/alice.toml',
+    existingUserId: '',
+    existingUserConfigPath: '',
+    canRenameDefaultUser: false,
+    userRenamedFrom: '',
     providerName: 'openai',
     providerType: 'openai',
     providerApiKey: '',
@@ -1072,11 +1076,12 @@ function app() {
         return window.OxydraOnboarding.inferDefaultUserConfigPath(userId);
       }
       const trimmed = (userId || '').trim();
-      return trimmed ? `users/${trimmed}.toml` : 'users/default.toml';
+      return trimmed ? `users/${trimmed}.toml` : 'users/alice.toml';
     },
 
     async seedOnboardingWizard() {
       try {
+        this.onboardingWizard = onboardingFactory();
         const [runnerResponse, agentResponse, usersResponse] = await Promise.all([
           api('/config/runner'),
           api('/config/agent'),
@@ -1120,7 +1125,12 @@ function app() {
           this.userList = users;
           this.onboardingWizard.userId = firstUser.user_id;
           this.onboardingWizard.userConfigPath = firstUser.config_path;
+          this.onboardingWizard.existingUserId = firstUser.user_id;
+          this.onboardingWizard.existingUserConfigPath = firstUser.config_path;
           this.onboardingWizard.userAlreadyExists = true;
+          this.onboardingWizard.canRenameDefaultUser = users.length === 1
+            && firstUser.user_id === 'alice'
+            && firstUser.config_path === 'users/alice.toml';
 
           const userResponse = await api(`/config/users/${encodeURIComponent(firstUser.user_id)}`);
           const userConfig = userResponse.config || {};
@@ -1139,9 +1149,10 @@ function app() {
           this.onboardingWizard.telegramSenderId = firstSenderId;
         } else {
           this.onboardingWizard.userAlreadyExists = false;
-          if (!this.onboardingWizard.userConfigPath.trim()) {
-            this.onboardingWizard.userConfigPath = this.defaultUserConfigPath(this.onboardingWizard.userId);
-          }
+          this.onboardingWizard.existingUserId = '';
+          this.onboardingWizard.existingUserConfigPath = '';
+          this.onboardingWizard.canRenameDefaultUser = false;
+          this.onboardingWizard.userConfigPath = this.defaultUserConfigPath(this.onboardingWizard.userId);
         }
 
         await this.onboardingLoadCatalogModels(this.onboardingWizard.providerType);
@@ -1253,6 +1264,9 @@ function app() {
         `Workspace root: ${this.onboardingWizard.runnerWorkspaceRoot || '(not set)'}`,
         `User: ${this.onboardingWizard.userId || '(not set)'}`,
         `User config path: ${this.onboardingWizard.userConfigPath || '(not set)'}`,
+        this.onboardingWizard.userRenamedFrom
+          ? `Built-in user renamed: ${this.onboardingWizard.userRenamedFrom} -> ${this.onboardingWizard.userId}`
+          : 'Built-in user renamed: no',
         `Provider: ${this.onboardingWizard.providerName || '(not set)'}`,
         `Provider type: ${this.onboardingWizard.providerType || '(not set)'}`,
         `Default model: ${this.onboardingWizard.defaultModel || '(not set)'}`,
@@ -1269,6 +1283,11 @@ function app() {
 
     onboardingAutofillUserPath() {
       this.onboardingWizard.userConfigPath = this.defaultUserConfigPath(this.onboardingWizard.userId);
+    },
+
+    onboardingUserIdInput(value) {
+      this.onboardingWizard.userId = value;
+      this.onboardingWizard.userConfigPath = this.defaultUserConfigPath(value);
     },
 
     onboardingPreviousStep() {
@@ -1309,23 +1328,56 @@ function app() {
         }
 
         if (this.onboardingWizard.step === 3) {
-          if (!this.onboardingWizard.userId.trim()) {
+          const requestedUserId = this.onboardingWizard.userId.trim();
+          if (!requestedUserId) {
             throw new Error('User ID is required.');
           }
-          if (!this.onboardingWizard.userConfigPath.trim()) {
-            this.onboardingWizard.userConfigPath = this.defaultUserConfigPath(this.onboardingWizard.userId);
-          }
 
-          if (!this.onboardingWizard.userAlreadyExists) {
+          const requestedConfigPath = this.defaultUserConfigPath(requestedUserId);
+          this.onboardingWizard.userConfigPath = requestedConfigPath;
+
+          if (this.onboardingWizard.canRenameDefaultUser
+            && this.onboardingWizard.existingUserId
+            && this.onboardingWizard.existingUserId !== requestedUserId) {
+            await api('/config/users/rename', {
+              method: 'POST',
+              body: {
+                old_user_id: this.onboardingWizard.existingUserId,
+                new_user_id: requestedUserId,
+                new_config_path: requestedConfigPath,
+              },
+            });
+            this.onboardingWizard.userRenamedFrom = this.onboardingWizard.existingUserId;
+            this.onboardingWizard.existingUserId = requestedUserId;
+            this.onboardingWizard.existingUserConfigPath = requestedConfigPath;
+            this.onboardingWizard.userAlreadyExists = true;
+            this.onboardingWizard.canRenameDefaultUser = false;
+          } else if (!this.onboardingWizard.existingUserId) {
             await api('/config/users', {
               method: 'POST',
               body: {
-                user_id: this.onboardingWizard.userId.trim(),
-                config_path: this.onboardingWizard.userConfigPath.trim(),
+                user_id: requestedUserId,
+                config_path: requestedConfigPath,
               },
             });
+            this.onboardingWizard.existingUserId = requestedUserId;
+            this.onboardingWizard.existingUserConfigPath = requestedConfigPath;
+            this.onboardingWizard.userAlreadyExists = true;
+          } else if (this.onboardingWizard.existingUserId !== requestedUserId) {
+            await api('/config/users', {
+              method: 'POST',
+              body: {
+                user_id: requestedUserId,
+                config_path: requestedConfigPath,
+              },
+            });
+            this.onboardingWizard.existingUserId = requestedUserId;
+            this.onboardingWizard.existingUserConfigPath = requestedConfigPath;
             this.onboardingWizard.userAlreadyExists = true;
           }
+
+          this.onboardingWizard.userId = requestedUserId;
+          this.onboardingWizard.userConfigPath = requestedConfigPath;
           await this.loadUsersPage();
           this.onboardingWizard.step = 4;
           this.showToast('User registration completed.', 'success');
