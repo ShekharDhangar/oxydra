@@ -66,10 +66,7 @@ pub struct SkillUpdateTool {
 // Registration
 // ---------------------------------------------------------------------------
 
-pub fn register_skill_tools(
-    registry: &mut crate::ToolRegistry,
-    workspace_config_dir: &Path,
-) {
+pub fn register_skill_tools(registry: &mut crate::ToolRegistry, workspace_config_dir: &Path) {
     let skills_dir = workspace_config_dir.join("skills");
     registry.register(
         SKILL_CREATE_TOOL_NAME,
@@ -77,10 +74,7 @@ pub fn register_skill_tools(
             skills_dir: skills_dir.clone(),
         },
     );
-    registry.register(
-        SKILL_UPDATE_TOOL_NAME,
-        SkillUpdateTool { skills_dir },
-    );
+    registry.register(SKILL_UPDATE_TOOL_NAME, SkillUpdateTool { skills_dir });
 }
 
 // ---------------------------------------------------------------------------
@@ -100,14 +94,8 @@ fn validate_skill_name(name: &str) -> Result<(), String> {
     }
     // Reject path traversal characters explicitly (belt-and-suspenders on top
     // of the regex check).
-    if name.contains('/')
-        || name.contains('\\')
-        || name.contains("..")
-        || name.contains('\0')
-    {
-        return Err(
-            "skill name must not contain '/', '\\', '..', or null bytes".to_owned(),
-        );
+    if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+        return Err("skill name must not contain '/', '\\', '..', or null bytes".to_owned());
     }
     // Kebab-case: starts with [a-z0-9], then [a-z0-9-]*.
     let mut chars = name.chars();
@@ -147,7 +135,10 @@ fn assemble_skill_file(metadata: &SkillMetadata, content: &str) -> String {
     fm.push_str("---\n");
     fm.push_str(&format!("name: {}\n", metadata.name));
     // Quote the description to handle special YAML characters.
-    fm.push_str(&format!("description: \"{}\"\n", metadata.description.replace('"', "\\\"")));
+    fm.push_str(&format!(
+        "description: \"{}\"\n",
+        metadata.description.replace('"', "\\\"")
+    ));
 
     let activation_str = match metadata.activation {
         SkillActivation::Auto => "auto",
@@ -213,7 +204,11 @@ fn validate_new_skill_path(skills_dir: &Path, name: &str) -> Result<PathBuf, Str
 
 /// Reject `skill_create` when the target folder/file path already exists, or
 /// when a legacy bare-file path with the same basename exists.
-fn ensure_target_path_absent(skills_dir: &Path, target_path: &Path, name: &str) -> Result<(), String> {
+fn ensure_target_path_absent(
+    skills_dir: &Path,
+    target_path: &Path,
+    name: &str,
+) -> Result<(), String> {
     let target_dir = target_path
         .parent()
         .ok_or_else(|| "target path has no parent".to_owned())?;
@@ -266,7 +261,11 @@ fn resolve_skill_path_by_metadata(
         }
 
         // Bare-file skill: a .md file directly in the skills directory.
-        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("md")) && path.is_file() {
+        if path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+            && path.is_file()
+        {
             if let Ok(raw) = std::fs::read_to_string(&path) {
                 if let Ok(skill) = validate_skill_content(&raw, &path) {
                     if skill.metadata.name == name {
@@ -343,9 +342,8 @@ impl Tool for SkillCreateTool {
         let request: SkillCreateArgs = parse_args(SKILL_CREATE_TOOL_NAME, args)?;
 
         // 1. Validate name.
-        validate_skill_name(&request.name).map_err(|msg| {
-            invalid_args(SKILL_CREATE_TOOL_NAME, msg)
-        })?;
+        validate_skill_name(&request.name)
+            .map_err(|msg| invalid_args(SKILL_CREATE_TOOL_NAME, msg))?;
 
         // 2. Check for existing skill with this name.
         let existing = resolve_skill_path_by_metadata(&self.skills_dir, &request.name)
@@ -363,9 +361,9 @@ impl Tool for SkillCreateTool {
 
         // 3. Parse activation.
         let activation = match &request.activation {
-            Some(s) => parse_activation(s).map_err(|msg| {
-                invalid_args(SKILL_CREATE_TOOL_NAME, msg)
-            })?,
+            Some(s) => {
+                parse_activation(s).map_err(|msg| invalid_args(SKILL_CREATE_TOOL_NAME, msg))?
+            }
             None => SkillActivation::Auto,
         };
 
@@ -383,20 +381,16 @@ impl Tool for SkillCreateTool {
         // 5. Validate the assembled content (frontmatter + token cap).
         let target_path = validate_new_skill_path(&self.skills_dir, &request.name)
             .map_err(|msg| execution_failed(SKILL_CREATE_TOOL_NAME, msg))?;
-        ensure_target_path_absent(&self.skills_dir, &target_path, &request.name).map_err(|msg| {
-            invalid_args(SKILL_CREATE_TOOL_NAME, msg)
-        })?;
+        ensure_target_path_absent(&self.skills_dir, &target_path, &request.name)
+            .map_err(|msg| invalid_args(SKILL_CREATE_TOOL_NAME, msg))?;
 
-        validate_skill_content(&full_content, &target_path).map_err(|err| {
-            invalid_args(SKILL_CREATE_TOOL_NAME, err.to_string())
-        })?;
+        validate_skill_content(&full_content, &target_path)
+            .map_err(|err| invalid_args(SKILL_CREATE_TOOL_NAME, err.to_string()))?;
 
         // 6. Write the file.
-        std::fs::create_dir_all(
-            target_path
-                .parent()
-                .ok_or_else(|| execution_failed(SKILL_CREATE_TOOL_NAME, "target path has no parent"))?,
-        )
+        std::fs::create_dir_all(target_path.parent().ok_or_else(|| {
+            execution_failed(SKILL_CREATE_TOOL_NAME, "target path has no parent")
+        })?)
         .map_err(|err| {
             execution_failed(
                 SKILL_CREATE_TOOL_NAME,
@@ -517,9 +511,9 @@ impl Tool for SkillUpdateTool {
 
         // 3. Merge provided fields over existing metadata.
         let activation = match &request.activation {
-            Some(s) => parse_activation(s).map_err(|msg| {
-                invalid_args(SKILL_UPDATE_TOOL_NAME, msg)
-            })?,
+            Some(s) => {
+                parse_activation(s).map_err(|msg| invalid_args(SKILL_UPDATE_TOOL_NAME, msg))?
+            }
             None => existing_skill.metadata.activation,
         };
 
@@ -529,27 +523,18 @@ impl Tool for SkillUpdateTool {
                 .description
                 .unwrap_or(existing_skill.metadata.description),
             activation,
-            requires: request
-                .requires
-                .unwrap_or(existing_skill.metadata.requires),
-            env_vars: request
-                .env_vars
-                .unwrap_or(existing_skill.metadata.env_vars),
-            priority: request
-                .priority
-                .unwrap_or(existing_skill.metadata.priority),
+            requires: request.requires.unwrap_or(existing_skill.metadata.requires),
+            env_vars: request.env_vars.unwrap_or(existing_skill.metadata.env_vars),
+            priority: request.priority.unwrap_or(existing_skill.metadata.priority),
         };
 
-        let merged_content = request
-            .content
-            .unwrap_or(existing_skill.content);
+        let merged_content = request.content.unwrap_or(existing_skill.content);
 
         // 4. Assemble and re-validate.
         let full_content = assemble_skill_file(&merged_metadata, &merged_content);
 
-        validate_skill_content(&full_content, &existing_path).map_err(|err| {
-            invalid_args(SKILL_UPDATE_TOOL_NAME, err.to_string())
-        })?;
+        validate_skill_content(&full_content, &existing_path)
+            .map_err(|err| invalid_args(SKILL_UPDATE_TOOL_NAME, err.to_string()))?;
 
         // 5. Write back to the same path.
         std::fs::write(&existing_path, &full_content).map_err(|err| {
@@ -808,10 +793,7 @@ mod tests {
             .execute(&args, &ToolExecutionContext::default())
             .await
             .unwrap_err();
-        assert!(
-            err.to_string().contains("token cap"),
-            "got: {err}"
-        );
+        assert!(err.to_string().contains("token cap"), "got: {err}");
     }
 
     // --- SkillUpdateTool ---
@@ -922,10 +904,7 @@ mod tests {
             .execute(&args, &ToolExecutionContext::default())
             .await
             .unwrap_err();
-        assert!(
-            err.to_string().contains("at least one field"),
-            "got: {err}"
-        );
+        assert!(err.to_string().contains("at least one field"), "got: {err}");
     }
 
     // --- Path safety ---

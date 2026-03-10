@@ -249,8 +249,7 @@ pub async fn bootstrap_runtime_tools(
     // to the workspace .oxydra/skills directory, which is a local filesystem
     // operation regardless of sandbox tier).
     if let Some(b) = bootstrap {
-        let workspace_config_dir =
-            std::path::PathBuf::from(&b.workspace_root).join(".oxydra");
+        let workspace_config_dir = std::path::PathBuf::from(&b.workspace_root).join(".oxydra");
         skill_tools::register_skill_tools(&mut registry, &workspace_config_dir);
     }
 
