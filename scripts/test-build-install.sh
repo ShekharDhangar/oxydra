@@ -701,6 +701,7 @@ prepare_source_checkout() {
 build_local_or_commit_assets() {
   local required_binary_platforms=("$@")
   local build_platforms=()
+  local required_image_platforms=()
   local platform
 
   for platform in "${required_binary_platforms[@]-}"; do
@@ -710,12 +711,24 @@ build_local_or_commit_assets() {
   done
 
   if [[ "$SKIP_DOCKER_IMAGES" != "true" ]]; then
-    if ! contains_item "linux-arm64" "${build_platforms[@]-}"; then
-      build_platforms+=("linux-arm64")
-    fi
     for platform in "${required_binary_platforms[@]-}"; do
-      if [[ "$platform" == "linux-amd64" ]] && ! contains_item "linux-amd64" "${build_platforms[@]-}"; then
-        build_platforms+=("linux-amd64")
+      case "$platform" in
+        linux-amd64|linux-arm64)
+          if append_unique "$platform" "${required_image_platforms[@]-}"; then
+            required_image_platforms+=("$platform")
+          fi
+          ;;
+        macos-arm64)
+          if append_unique "linux-arm64" "${required_image_platforms[@]-}"; then
+            required_image_platforms+=("linux-arm64")
+          fi
+          ;;
+      esac
+    done
+
+    for platform in "${required_image_platforms[@]-}"; do
+      if append_unique "$platform" "${build_platforms[@]-}"; then
+        build_platforms+=("$platform")
       fi
     done
   fi

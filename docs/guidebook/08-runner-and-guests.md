@@ -499,6 +499,8 @@ Guest images can be built from `docker/Dockerfile` (full in-Docker build) or fro
 
 # Full in-Docker build
 ./scripts/build-guest-images-in-docker.sh
+# or choose explicitly
+./scripts/build-guest-images-in-docker.sh amd64
 ```
 
 The in-Docker build compiles both `oxydra-vm` and `shell-daemon` binaries in a shared Rust builder. The prebuilt path packages locally compiled binaries into Alpine-based runtime images.

@@ -646,10 +646,12 @@ Option A: cross-compile locally (supports both `amd64` and `arm64`):
 ./scripts/build-guest-images.sh amd64
 ```
 
-Option B: in-Docker build (currently builds `linux/arm64` images):
+Option B: in-Docker build (defaults to the host Linux architecture; pass `amd64` or `arm64` explicitly if needed):
 
 ```bash
 ./scripts/build-guest-images-in-docker.sh
+# or
+./scripts/build-guest-images-in-docker.sh amd64
 ```
 
 If you used a custom tag, set matching refs in `.oxydra/runner.toml`:
