@@ -6,6 +6,12 @@ Oxydra is a Rust-based AI agent orchestrator, that strives to run always-evolvin
 
 Oxydra is designed for people who want an agent runtime they can self-host, inspect, and evolve — not a black box.
 
+[Features](#features)
+
+[Quick Start](#quick-start)
+
+[Troubleshooting](#troubleshooting) 
+
 ## Features
 
 - **Provider-agnostic LLM layer**: OpenAI, Anthropic, Gemini, and OpenAI Responses API, with streaming, retries, and model-catalog-based validation.
@@ -145,7 +151,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 See [docs/COMPARISON.md](docs/COMPARISON.md).
 
-### Troubleshooting
+## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
