@@ -520,7 +520,7 @@ version = "3.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d314cc62af2b6b0c65780555abb4d02a03dd3b799cd42419044f0c38d99738c0"
 dependencies = [
- "darling 0.20.11",
+ "darling 0.23.0",
  "ident_case",
  "prettyplease",
  "proc-macro2",
@@ -719,7 +719,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "channels"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "async-trait",
  "frankenstein",
@@ -1412,7 +1412,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1513,7 +1513,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1847,7 +1847,7 @@ dependencies = [
 
 [[package]]
 name = "gateway"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -2309,7 +2309,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -3109,7 +3109,7 @@ dependencies = [
 
 [[package]]
 name = "memory"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "async-trait",
  "blake3",
@@ -3283,7 +3283,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3872,7 +3872,7 @@ dependencies = [
 
 [[package]]
 name = "provider"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3922,7 +3922,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.37",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -3960,9 +3960,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4347,7 +4347,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "axum 0.8.8",
  "base64 0.22.1",
@@ -4387,7 +4387,7 @@ dependencies = [
 
 [[package]]
 name = "runtime"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4492,7 +4492,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4597,7 +4597,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4884,7 +4884,7 @@ dependencies = [
 
 [[package]]
 name = "shell-daemon"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "bytes",
  "clap",
@@ -5188,15 +5188,15 @@ checksum = "591ef38edfb78ca4771ee32cf494cb8771944bee237a9b91fc9c1424ac4b777b"
 
 [[package]]
 name = "tempfile"
-version = "3.26.0"
+version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82a72c767771b47409d2345987fda8628641887d5466101319899796367354a0"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5694,7 +5694,7 @@ dependencies = [
 
 [[package]]
 name = "tools"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -5721,7 +5721,7 @@ dependencies = [
 
 [[package]]
 name = "tools-macros"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5902,7 +5902,7 @@ dependencies = [
 
 [[package]]
 name = "tui"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "async-trait",
  "clap",
@@ -5944,7 +5944,7 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "types"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6295,7 +6295,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-guest"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -6894,7 +6894,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
