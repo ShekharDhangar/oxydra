@@ -203,17 +203,26 @@ fn redact_high_entropy_tokens(input: &str) -> String {
 
 /// Returns `true` for tokens that match known non-secret identifier patterns.
 ///
-/// Some internal identifiers (e.g., memory note IDs like `note-{uuid4}`) are
-/// high-entropy by construction but are NOT secrets.  We exempt them from
-/// redaction so downstream consumers (including the LLM) can reference them.
+/// Some internal identifiers (e.g., memory note IDs like `note-{uuid4}`, or
+/// scheduler IDs which are plain UUIDs) are high-entropy by construction but
+/// are NOT secrets.  We exempt them from redaction so downstream consumers
+/// (including the LLM) can reference them.
 fn is_known_internal_identifier(token: &str) -> bool {
     static NOTE_ID_PATTERN: OnceLock<Regex> = OnceLock::new();
-    let pattern = NOTE_ID_PATTERN.get_or_init(|| {
+    let note_pattern = NOTE_ID_PATTERN.get_or_init(|| {
         // Matches `note-{uuid4}` where uuid4 is 8-4-4-4-12 hex digits.
         Regex::new(r"^note-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
             .expect("note ID pattern should compile")
     });
-    pattern.is_match(token)
+
+    static UUID_PATTERN: OnceLock<Regex> = OnceLock::new();
+    let uuid_pattern = UUID_PATTERN.get_or_init(|| {
+        // Matches a plain UUID (e.g. schedule_id, run_id) in lowercase canonical form.
+        Regex::new(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+            .expect("UUID pattern should compile")
+    });
+
+    note_pattern.is_match(token) || uuid_pattern.is_match(token)
 }
 
 fn looks_like_filesystem_path(token: &str) -> bool {
@@ -338,6 +347,25 @@ Authorization: Bearer very-secret-token
                 "note_id `{note_id}` should NOT be redacted but got:\n{scrubbed}"
             );
         }
+    }
+
+    #[test]
+    fn scrubber_preserves_schedule_and_run_ids() {
+        // schedule_id and run_id are plain UUIDs — they must never be redacted.
+        let schedule_id = "550e8400-e29b-41d4-a716-446655440000";
+        let run_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+        let output = format!(
+            r#"{{"schedule_id": "{schedule_id}", "run_id": "{run_id}", "status": "active"}}"#
+        );
+        let scrubbed = scrub_tool_output(&output);
+        assert!(
+            scrubbed.contains(schedule_id),
+            "schedule_id should NOT be redacted but got:\n{scrubbed}"
+        );
+        assert!(
+            scrubbed.contains(run_id),
+            "run_id should NOT be redacted but got:\n{scrubbed}"
+        );
     }
 
     #[test]
