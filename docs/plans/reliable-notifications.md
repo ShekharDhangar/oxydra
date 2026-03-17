@@ -2,7 +2,7 @@
 
 Status: Proposed
 Created: 2026-03-17
-Updated: 2026-03-17
+Updated: 2026-03-18
 
 ## Executive summary
 
@@ -104,6 +104,10 @@ Replace the TUI branch in `GatewayServer::notify_user()` with this policy:
 - The chosen fallback policy is fan-out, not "most recent session". No `last_activity_epoch_secs` access is needed.
 - This phase does not introduce durable queuing. If the user has no connected TUI sessions at delivery time, the notification is still lost, but now visibly and intentionally.
 
+### Open questions
+
+1. Are both `channel_origin == GATEWAY_CHANNEL_ID` and `parent_session_id.is_none()` necessary for the fallback filter, or does one subsume the other? If Telegram sessions always have a non-`GATEWAY_CHANNEL_ID` origin, the channel-origin check is redundant. Confirm in the gateway session model before coding the filter to avoid false confidence from an over-specified condition.
+
 ### Tests to add
 
 1. **Origin connected** — delivers only to the origin session even when other TUI sessions are also connected.
@@ -162,6 +166,13 @@ Make proactive Telegram delivery batch-aware and schedule-aware:
    - For media batches, reuse the existing media upload logic and apply the same deleted-thread fallback to main chat.
    - If media still cannot be uploaded after retry, log a warning and send a plain text notice when possible so the user sees that an attachment failed instead of losing it silently.
 5. Batch outcome is counted once per proactive frame, not once per text chunk. A long message split into N chunks is still one delivery batch for failure-streak purposes.
+
+### Open questions
+
+1. **`schedule_id` placement.** Embedding `schedule_id` in `GatewayMediaAttachment` adds scheduling context to a general-purpose `types` crate type. An alternative is passing the schedule ID at the proactive sender call site (e.g. as an argument to `send_proactive`) and keeping the attachment type schedule-agnostic. Which approach is preferred, and what are the downstream implications for each?
+2. **Shared media upload helper.** "Reuse the existing media upload logic" is underspecified. Which specific function or struct in the interactive Telegram adapter should be extracted? If the upload path is coupled to the interactive session or bot context, a shared helper will need explicit design work before Phase 2 can proceed cleanly.
+3. **Mock server crate.** The test implementation note names `Bot::new_url(...)` but does not specify a mock HTTP framework (`wiremock`, `httpmock`, a custom `axum` handler, etc.). Check existing patterns in the `channels` crate and agree on the crate before writing tests.
+4. **Plain-text fallback notice wording.** What should the notice say when media cannot be uploaded after retry? A concrete template is needed to avoid divergent implementations (e.g. `"[Scheduled attachment could not be delivered]"`).
 
 ### Important regression guard
 
@@ -249,6 +260,11 @@ delivery_thread_not_found_streak INTEGER NOT NULL DEFAULT 0
    - new `channel_context_id`
    - threshold (`3`)
 
+### Open questions
+
+1. **Remap trigger semantics.** Does "streak reaches 3" mean `streak == 3` (fires exactly once per threshold crossing) or `streak >= 3` (fires on every subsequent attempt)? If the fallback also fails on the 3rd attempt the streak increments to 4; should the remap trigger again on the 4th? Nail down the exact comparison before writing the streak-update logic.
+2. **Concurrent streak updates.** Two schedule runs for the same user firing simultaneously may race on the streak column. The SQL should use an atomic increment-and-read (e.g. `UPDATE ... SET streak = streak + 1 RETURNING streak`) rather than a read-then-write. Confirm whether the trait design assumes this or whether it must be made explicit in the store implementation.
+
 ### Why this is persistent
 
 The streak is stored in the schedules table rather than in process memory. That means the "3 consecutive failures" rule survives process restarts and does not depend on a long-lived sender instance.
@@ -305,6 +321,10 @@ Update those chapters to reflect:
 - scheduled Telegram media delivery
 - deleted-topic fallback to main chat
 - 3-failure stored-route remap behavior
+
+### Open questions
+
+1. **Stale section pointers.** The docs list names four files but does not identify which sections within each are stale. Adding a one-line pointer per file (e.g. "§ Notification routing" in `09-gateway-and-channels.md`) would reduce lookup time during implementation and make review easier.
 
 ### Acceptance gate
 
