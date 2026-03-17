@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use super::*;
 use runtime::ScheduledTurnRunner;
-use types::{AgentDefinition, ChannelCapabilities, InlineMedia, ProviderSelection};
+use types::{
+    AgentDefinition, ChannelCapabilities, InlineMedia, MediaAttachment, ProviderSelection,
+};
 
 /// User-submitted content for a single turn (text + optional media).
 pub struct UserTurnInput {
@@ -284,24 +286,31 @@ impl ScheduledTurnRunner for RuntimeGatewayTurnRunner {
         user_id: &str,
         session_id: &str,
         prompt: String,
+        channel_capabilities: Option<ChannelCapabilities>,
         cancellation: CancellationToken,
-    ) -> Result<String, RuntimeError> {
-        let (delta_tx, _delta_rx) = mpsc::unbounded_channel();
+    ) -> Result<(String, Vec<MediaAttachment>), RuntimeError> {
+        let (delta_tx, mut delta_rx) = mpsc::unbounded_channel();
         let input = UserTurnInput {
             prompt,
             attachments: Vec::new(),
         };
+        let origin = TurnOrigin {
+            channel_capabilities,
+            ..TurnOrigin::default()
+        };
         let response = self
-            .run_turn(
-                user_id,
-                session_id,
-                input,
-                cancellation,
-                delta_tx,
-                TurnOrigin::default(),
-            )
+            .run_turn(user_id, session_id, input, cancellation, delta_tx, origin)
             .await?;
-        Ok(response.message.content.unwrap_or_default())
+
+        // Collect any media attachments emitted by send_media during this turn.
+        let mut media = Vec::new();
+        while let Ok(item) = delta_rx.try_recv() {
+            if let StreamItem::Media(attachment) = item {
+                media.push(attachment);
+            }
+        }
+
+        Ok((response.message.content.unwrap_or_default(), media))
     }
 }
 

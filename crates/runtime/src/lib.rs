@@ -5,11 +5,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tools::ToolRegistry;
 use types::{
-    Context, Memory, MemoryError, MemoryHybridQueryRequest, MemoryRecallRequest, MemoryRetrieval,
-    MemoryStoreRequest, MemorySummaryReadRequest, MemorySummaryState, MemorySummaryWriteRequest,
-    Message, MessageRole, Provider, ProviderError, ProviderId, ProviderSelection, Response,
-    RuntimeError, RuntimeProgressEvent, RuntimeProgressKind, SafetyTier, StreamItem, ToolCall,
-    ToolCallDelta, ToolError, ToolExecutionContext, UsageUpdate,
+    ChannelCapabilities, Context, MediaAttachment, Memory, MemoryError, MemoryHybridQueryRequest,
+    MemoryRecallRequest, MemoryRetrieval, MemoryStoreRequest, MemorySummaryReadRequest,
+    MemorySummaryState, MemorySummaryWriteRequest, Message, MessageRole, Provider, ProviderError,
+    ProviderId, ProviderSelection, Response, RuntimeError, RuntimeProgressEvent,
+    RuntimeProgressKind, SafetyTier, StreamItem, ToolCall, ToolCallDelta, ToolError,
+    ToolExecutionContext, UsageUpdate,
 };
 
 const DEFAULT_STREAM_BUFFER_SIZE: usize = 64;
@@ -62,8 +63,9 @@ pub trait ScheduledTurnRunner: Send + Sync {
         user_id: &str,
         session_id: &str,
         prompt: String,
+        channel_capabilities: Option<ChannelCapabilities>,
         cancellation: CancellationToken,
-    ) -> Result<String, RuntimeError>;
+    ) -> Result<(String, Vec<MediaAttachment>), RuntimeError>;
 }
 
 #[cfg(test)]

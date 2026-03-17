@@ -3732,9 +3732,10 @@ mod scheduler_executor_tests {
     use tokio::sync::Mutex;
     use tokio_util::sync::CancellationToken;
     use types::{
-        GatewayServerFrame, NotificationPolicy, RuntimeError, ScheduleCadence, ScheduleDefinition,
-        ScheduleRunRecord, ScheduleRunStatus, ScheduleSearchFilters, ScheduleSearchResult,
-        ScheduleStatus, SchedulerConfig, SchedulerError,
+        ChannelCapabilities, GatewayServerFrame, MediaAttachment, NotificationPolicy, RuntimeError,
+        ScheduleCadence, ScheduleDefinition, ScheduleRunRecord, ScheduleRunStatus,
+        ScheduleSearchFilters, ScheduleSearchResult, ScheduleStatus, SchedulerConfig,
+        SchedulerError,
     };
 
     use crate::ScheduledTurnRunner;
@@ -3762,14 +3763,16 @@ mod scheduler_executor_tests {
             _user_id: &str,
             _session_id: &str,
             _prompt: String,
+            _channel_capabilities: Option<ChannelCapabilities>,
             _cancellation: CancellationToken,
-        ) -> Result<String, RuntimeError> {
+        ) -> Result<(String, Vec<MediaAttachment>), RuntimeError> {
             let mut responses = self.responses.lock().await;
-            if responses.is_empty() {
-                Ok("default response".to_owned())
+            let text = if responses.is_empty() {
+                "default response".to_owned()
             } else {
-                responses.remove(0)
-            }
+                responses.remove(0)?
+            };
+            Ok((text, Vec::new()))
         }
     }
 

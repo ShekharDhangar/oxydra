@@ -8,8 +8,9 @@ use memory_crate::cadence::next_run_for_cadence;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 use types::{
-    GatewayScheduledNotification, GatewayServerFrame, NotificationPolicy, ScheduleCadence,
-    ScheduleDefinition, ScheduleRunRecord, ScheduleRunStatus, ScheduleStatus, SchedulerConfig,
+    ChannelCapabilities, GatewayMediaAttachment, GatewayScheduledNotification, GatewayServerFrame,
+    GatewaySession, MediaAttachment, NotificationPolicy, ScheduleCadence, ScheduleDefinition,
+    ScheduleRunRecord, ScheduleRunStatus, ScheduleStatus, SchedulerConfig,
 };
 
 use crate::ScheduledTurnRunner;
@@ -105,23 +106,36 @@ impl SchedulerExecutor {
 
         let child_cancellation = self.cancellation.child_token();
 
+        let channel_capabilities = schedule
+            .channel_id
+            .as_deref()
+            .map(ChannelCapabilities::from_channel_origin);
+
         let result = self
             .turn_runner
-            .run_scheduled_turn(&schedule.user_id, &session_id, prompt, child_cancellation)
+            .run_scheduled_turn(
+                &schedule.user_id,
+                &session_id,
+                prompt,
+                channel_capabilities,
+                child_cancellation,
+            )
             .await;
 
         let finished_at = Utc::now().to_rfc3339();
 
-        let (status, response_text) = match result {
-            Ok(text) => (ScheduleRunStatus::Success, text),
-            Err(types::RuntimeError::Cancelled) => (ScheduleRunStatus::Cancelled, String::new()),
+        let (status, response_text, media_items) = match result {
+            Ok((text, media)) => (ScheduleRunStatus::Success, text, media),
+            Err(types::RuntimeError::Cancelled) => {
+                (ScheduleRunStatus::Cancelled, String::new(), Vec::new())
+            }
             Err(e) => {
                 tracing::warn!(
                     schedule_id = %schedule.schedule_id,
                     error = %e,
                     "scheduled turn failed"
                 );
-                (ScheduleRunStatus::Failed, format!("Error: {e}"))
+                (ScheduleRunStatus::Failed, format!("Error: {e}"), Vec::new())
             }
         };
 
@@ -153,7 +167,14 @@ impl SchedulerExecutor {
         };
 
         let notified = self
-            .handle_notification(&schedule, status, &response_text, &clean_text)
+            .handle_notification(
+                &schedule,
+                &session_id,
+                status,
+                &response_text,
+                &clean_text,
+                &media_items,
+            )
             .await;
 
         let (next_run_at, new_status) = self.compute_reschedule(&schedule, status);
@@ -203,9 +224,11 @@ impl SchedulerExecutor {
     async fn handle_notification(
         &self,
         schedule: &ScheduleDefinition,
+        session_id: &str,
         status: ScheduleRunStatus,
         response_text: &str,
         clean_text: &str,
+        media_items: &[MediaAttachment],
     ) -> bool {
         if status != ScheduleRunStatus::Success {
             return false;
@@ -218,10 +241,23 @@ impl SchedulerExecutor {
         };
 
         if should_notify {
-            let message = match schedule.notification_policy {
-                NotificationPolicy::Conditional => clean_text.to_owned(),
-                _ => clean_text.to_owned(),
-            };
+            // Send media attachments before the text notification so they
+            // arrive first and the text serves as a caption/summary.
+            for attachment in media_items {
+                self.notifier
+                    .notify_user(
+                        schedule,
+                        GatewayServerFrame::MediaAttachment(GatewayMediaAttachment {
+                            request_id: uuid::Uuid::new_v4().to_string(),
+                            session: GatewaySession {
+                                user_id: schedule.user_id.clone(),
+                                session_id: session_id.to_owned(),
+                            },
+                            attachment: attachment.clone(),
+                        }),
+                    )
+                    .await;
+            }
 
             self.notifier
                 .notify_user(
@@ -229,7 +265,7 @@ impl SchedulerExecutor {
                     GatewayServerFrame::ScheduledNotification(GatewayScheduledNotification {
                         schedule_id: schedule.schedule_id.clone(),
                         schedule_name: schedule.name.clone(),
-                        message,
+                        message: clean_text.to_owned(),
                     }),
                 )
                 .await;
