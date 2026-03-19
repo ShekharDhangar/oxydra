@@ -208,24 +208,8 @@ async fn run() -> Result<(), VmError> {
         bootstrap.config.gateway.clone(),
     ));
 
-    // Spawn the scheduler executor as a background task when enabled.
-    let scheduler_cancellation = CancellationToken::new();
-    if let Some(scheduler_store) = bootstrap.scheduler_store {
-        let scheduler_config = bootstrap.config.scheduler.clone();
-        let executor = SchedulerExecutor::new(
-            scheduler_store,
-            turn_runner as Arc<dyn runtime::ScheduledTurnRunner>,
-            gateway.clone() as Arc<dyn runtime::SchedulerNotifier>,
-            scheduler_config,
-            scheduler_cancellation.child_token(),
-        );
-        tokio::spawn(async move {
-            executor.run().await;
-        });
-        info!("scheduler executor started");
-    }
-
-    // Spawn the Telegram channel adapter when configured.
+    // Register channel proactive senders BEFORE spawning the scheduler so
+    // that due schedules on the first tick can reach all channels.
     let telegram_cancellation = CancellationToken::new();
     #[cfg(feature = "telegram")]
     if let Some(channels_config) = bootstrap
@@ -269,6 +253,25 @@ async fn run() -> Result<(), VmError> {
             Ok(()) => info!("telegram adapter started"),
             Err(e) => warn!(error = %e, "failed to start telegram adapter"),
         }
+    }
+
+    // Spawn the scheduler executor as a background task when enabled.
+    // This runs AFTER proactive senders are registered to avoid a race where
+    // the first scheduler tick fires before channels are ready to deliver.
+    let scheduler_cancellation = CancellationToken::new();
+    if let Some(scheduler_store) = bootstrap.scheduler_store {
+        let scheduler_config = bootstrap.config.scheduler.clone();
+        let executor = SchedulerExecutor::new(
+            scheduler_store,
+            turn_runner as Arc<dyn runtime::ScheduledTurnRunner>,
+            gateway.clone() as Arc<dyn runtime::SchedulerNotifier>,
+            scheduler_config,
+            scheduler_cancellation.child_token(),
+        );
+        tokio::spawn(async move {
+            executor.run().await;
+        });
+        info!("scheduler executor started");
     }
 
     let app = Arc::clone(&gateway).router();

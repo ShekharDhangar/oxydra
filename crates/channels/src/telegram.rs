@@ -1599,14 +1599,56 @@ async fn send_text_batch(
     }
 }
 
-/// Send a media attachment proactively with thread-not-found fallback.
+/// Maximum number of transient-error retries for media uploads.
+const MEDIA_UPLOAD_MAX_RETRIES: u32 = 2;
+
+/// Initial backoff delay between transient-error retries.
+const MEDIA_UPLOAD_RETRY_DELAY: Duration = Duration::from_millis(500);
+
+/// Attempt a media upload with retries for transient API errors.
+/// Thread-not-found errors are NOT retried here — they are handled by the
+/// caller with a different target.
+async fn upload_media_with_retries(
+    bot: &Bot,
+    chat_id: i64,
+    thread_id: Option<i32>,
+    attachment: &MediaAttachment,
+) -> Result<(), MediaUploadError> {
+    let mut last_err = None;
+    for attempt in 0..=MEDIA_UPLOAD_MAX_RETRIES {
+        if attempt > 0 {
+            let delay = MEDIA_UPLOAD_RETRY_DELAY * attempt;
+            debug!(
+                attempt,
+                ?delay,
+                "proactive media: retrying after transient error"
+            );
+            tokio::time::sleep(delay).await;
+        }
+        match upload_media_to_chat(bot, chat_id, thread_id, attachment).await {
+            Ok(()) => return Ok(()),
+            Err(MediaUploadError::Io(e)) => return Err(MediaUploadError::Io(e)),
+            Err(MediaUploadError::Api(ref e)) if is_thread_not_found_error(e) => {
+                return Err(MediaUploadError::Api(e.clone()));
+            }
+            Err(e) => {
+                debug!(attempt, error = ?e, "proactive media: transient upload error");
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| MediaUploadError::Api("upload failed after retries".to_owned())))
+}
+
+/// Send a media attachment proactively with transient retry and
+/// thread-not-found fallback.
 async fn send_media_proactive(
     bot: &Bot,
     chat_id: i64,
     thread_id: Option<i32>,
     attachment: &MediaAttachment,
 ) -> ProactiveDeliveryOutcome {
-    match upload_media_to_chat(bot, chat_id, thread_id, attachment).await {
+    match upload_media_with_retries(bot, chat_id, thread_id, attachment).await {
         Ok(()) => ProactiveDeliveryOutcome::PrimarySuccess,
         Err(MediaUploadError::Io(e)) => {
             warn!(error = %e, "proactive media: temp file write failed");
@@ -1618,8 +1660,8 @@ async fn send_media_proactive(
                 chat_id,
                 "proactive media: thread not found, retrying to main chat"
             );
-            // Retry to main chat.
-            match upload_media_to_chat(bot, chat_id, None, attachment).await {
+            // Retry to main chat (also with transient retries).
+            match upload_media_with_retries(bot, chat_id, None, attachment).await {
                 Ok(()) => ProactiveDeliveryOutcome::ThreadNotFoundFallbackSuccess,
                 Err(_) => {
                     // Send text notice as last resort.
@@ -1629,7 +1671,7 @@ async fn send_media_proactive(
             }
         }
         Err(MediaUploadError::Api(e)) => {
-            warn!(error = %e, "proactive media: upload failed");
+            warn!(error = %e, "proactive media: upload failed after retries");
             // Non-thread API failure — try text notice.
             let _ = send_message_plain(bot, chat_id, thread_id, MEDIA_FALLBACK_NOTICE).await;
             ProactiveDeliveryOutcome::OtherFailure
@@ -2099,6 +2141,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn proactive_media_transient_failure_retries_and_succeeds() {
+        // First sendPhoto: transient 500 error. Second sendPhoto (retry): success.
+        let (url, log) = spawn_mock_tg(vec![tg_server_error(), tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_scheduled_media_frame();
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::PrimarySuccess));
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 2);
+        assert!(log[0].0.contains("sendPhoto"));
+        assert!(log[1].0.contains("sendPhoto"));
+    }
+
+    #[tokio::test]
+    async fn proactive_media_two_transient_failures_then_success() {
+        // sendPhoto fails twice with 500, then succeeds on the 3rd (final) attempt.
+        let (url, log) = spawn_mock_tg(vec![tg_server_error(), tg_server_error(), tg_ok()]).await;
+        let bot = Bot::new_url(&url);
+        let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
+
+        let frame = make_scheduled_media_frame();
+        let outcome = sender.send_proactive_impl("-100123:42", &frame).await;
+
+        assert_eq!(outcome, Some(ProactiveDeliveryOutcome::PrimarySuccess));
+        let log = log.lock().unwrap();
+        assert_eq!(log.len(), 3);
+        assert!(log[0].0.contains("sendPhoto"));
+        assert!(log[1].0.contains("sendPhoto"));
+        assert!(log[2].0.contains("sendPhoto"));
+    }
+
+    #[tokio::test]
     async fn proactive_media_thread_not_found_retries_main_chat() {
         // First sendPhoto: thread-not-found. Second sendPhoto: success.
         let (url, log) = spawn_mock_tg(vec![tg_thread_not_found(), tg_ok()]).await;
@@ -2121,8 +2198,16 @@ mod tests {
 
     #[tokio::test]
     async fn proactive_media_total_failure_sends_text_notice() {
-        // sendPhoto fails with 500, then sendMessage for notice succeeds.
-        let (url, log) = spawn_mock_tg(vec![tg_server_error(), tg_ok()]).await;
+        // sendPhoto fails with 500 on every retry attempt, then sendMessage
+        // for the fallback notice succeeds. With MEDIA_UPLOAD_MAX_RETRIES=2
+        // the upload is attempted 3 times before giving up.
+        let (url, log) = spawn_mock_tg(vec![
+            tg_server_error(),
+            tg_server_error(),
+            tg_server_error(),
+            tg_ok(),
+        ])
+        .await;
         let bot = Bot::new_url(&url);
         let sender = TelegramProactiveSender::new_with_bot(bot, 4096);
 
@@ -2131,11 +2216,13 @@ mod tests {
 
         assert_eq!(outcome, Some(ProactiveDeliveryOutcome::OtherFailure));
         let log = log.lock().unwrap();
-        assert_eq!(log.len(), 2);
-        // First is sendPhoto, second is sendMessage with the fallback notice.
+        assert_eq!(log.len(), 4);
+        // First three are sendPhoto retries, last is sendMessage with fallback notice.
         assert!(log[0].0.contains("sendPhoto"));
-        assert!(log[1].0.contains("sendMessage"));
-        assert!(log[1].1.contains(MEDIA_FALLBACK_NOTICE));
+        assert!(log[1].0.contains("sendPhoto"));
+        assert!(log[2].0.contains("sendPhoto"));
+        assert!(log[3].0.contains("sendMessage"));
+        assert!(log[3].1.contains(MEDIA_FALLBACK_NOTICE));
     }
 
     #[tokio::test]

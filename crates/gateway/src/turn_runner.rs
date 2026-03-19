@@ -262,6 +262,19 @@ impl GatewayTurnRunner for RuntimeGatewayTurnRunner {
             }
         };
 
+        // Drain any stream events that arrived between the runtime completing
+        // and the select! loop breaking.  This prevents media items from being
+        // silently lost when the scrubbing intermediary task is still in-flight.
+        // NOTE: Items still being processed by the scrubbing intermediary task
+        // may be lost if they haven't been forwarded by the time close() is
+        // called.  This is a best-effort drain for the common case.
+        stream_events_rx.close();
+        while let Ok(item) = stream_events_rx.try_recv() {
+            if let item @ StreamItem::Media(_) = item {
+                let _ = delta_sender.send(item);
+            }
+        }
+
         if result.is_err() {
             // Roll back to the pre-turn state so the next user turn starts from a
             // clean history without any partially-executed tool calls or provider
