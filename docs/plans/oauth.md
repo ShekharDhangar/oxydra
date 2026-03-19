@@ -24,7 +24,7 @@ Add OAuth-based authentication for three subscription-backed LLM providers — *
 
 | Provider | OAuth Flow | Auth server | Token endpoint | API endpoint | Token lifetime |
 |---|---|---|---|---|---|
-| **GitHub Copilot** | Device code | `github.com/login/device/code` | `api.github.com/copilot_internal/v2/token` | `api.githubcopilot.com` (OpenAI-compatible) | ~30 min (Copilot token), GitHub token persists |
+| **GitHub Copilot** | Device code | `github.com/login/device/code` | `api.github.com/copilot_internal/v2/token` | `api.githubcopilot.com` (multi-API: Anthropic Messages, OpenAI Completions, OpenAI Responses depending on model) | ~30 min (Copilot token), GitHub token persists |
 | **OpenAI Codex** | Authorization code + PKCE | `auth.openai.com/oauth/authorize` | `auth.openai.com/oauth/token` | `api.openai.com` (standard OpenAI) | ~1 hr access, refresh token persists |
 | **Google Gemini CLI** | Authorization code + PKCE | `accounts.google.com/o/oauth2/v2/auth` | `oauth2.googleapis.com/token` | `generativelanguage.googleapis.com` (same as current, but Bearer instead of x-goog-api-key) | ~1 hr access, refresh token persists |
 
@@ -87,16 +87,20 @@ Tokens stored: ~/.config/oxydra/oauth_tokens.json
     ▼
 Config references it:
     [providers.registry.copilot]
-    provider_type = "openai"
+    provider_type = "copilot"
     auth = "copilot"
     catalog_provider = "github-copilot"
     │
     ▼
-build_provider() sees auth = "copilot"
+build_provider() sees provider_type = "copilot" + auth = "copilot"
     → loads token from oauth_tokens.json
     → if expired, refreshes (exchange github_token → new copilot_token)
-    → passes token as api_key to OpenAIProvider
-    → sets base_url = "https://api.githubcopilot.com"
+    → builds CopilotProvider with model-aware dispatch:
+       - Claude models → AnthropicProvider (Messages API)
+       - GPT-4/4o, Gemini → OpenAIProvider (chat/completions)
+       - GPT-5+ → OpenAIResponsesProvider (responses API)
+    → all inner providers share the same CopilotTokenSource + base_url
+    → sets base_url from copilot token's proxy-ep field
     → sets extra_headers for Copilot compat
 ```
 
@@ -147,9 +151,28 @@ Based on Pi's `github-copilot.ts` and OpenCode's `copilot.go`:
 2. **User action:** Visit URL, enter code displayed in terminal
 3. **Poll:** POST `github.com/login/oauth/access_token` with `grant_type=urn:ietf:params:oauth:grant-type:device_code` until user completes
 4. **Token exchange:** GET `api.github.com/copilot_internal/v2/token` with `Authorization: Bearer <github_token>` → returns short-lived Copilot token
-5. **API calls:** Use Copilot token as Bearer against `api.githubcopilot.com` (OpenAI-compatible chat/completions)
+5. **API calls:** Use Copilot token as Bearer against `api.githubcopilot.com` with model-family-aware routing (see "Copilot Multi-API Routing" below)
 6. **Refresh:** Copilot tokens expire ~30 min. Re-exchange the persistent GitHub token for a fresh Copilot token.
-7. **Extra headers:** `Editor-Version`, `Editor-Plugin-Version`, `Copilot-Integration-Id` (required by Copilot API)
+7. **Extra headers:** `Editor-Version`, `Editor-Plugin-Version`, `Copilot-Integration-Id`, `X-Initiator`, `Openai-Intent` (required by Copilot API)
+
+#### Copilot Multi-API Routing
+
+Research into Pi (`badlogic/pi-mono`), OpenCode (`opencode-ai/opencode`), and the official GitHub Copilot SDK (`github/copilot-sdk`) reveals that the Copilot API supports **three different wire formats** depending on the model family. All requests go to the same `api.githubcopilot.com` (or `api.individual.githubcopilot.com`) base URL, but the API path and request/response format differ:
+
+| Model family | Wire API | API path | Examples |
+|---|---|---|---|
+| Claude | Anthropic Messages API | `/anthropic/v1/messages` (via Anthropic SDK) | claude-sonnet-4.6, claude-opus-4.5 |
+| GPT-4/4o, Gemini | OpenAI Chat Completions | `/v1/chat/completions` | gpt-4.1, gpt-4o, gemini-2.5-pro |
+| GPT-5+ | OpenAI Responses API | `/v1/responses` | gpt-5, gpt-5.1, gpt-5.2, o4-mini |
+
+The official Copilot SDK's `ProviderConfig` type confirms this with `type: "openai" | "azure" | "anthropic"` and `wireApi: "completions" | "responses"`.
+
+**How others handle this:**
+- **Pi (badlogic/pi-mono):** Model-family-aware dispatch. Claude models use the Anthropic SDK (native Messages API), GPT-4/Gemini use OpenAI chat completions, GPT-5+ use OpenAI Responses API. Each model in Pi's catalog specifies its `api` field.
+- **OpenCode (opencode-ai/opencode):** Simple approach — routes ALL models through `/v1/chat/completions` with a monkeypatch for Claude streaming quirks. Loses Anthropic-native features (extended thinking, proper multi-tool streaming).
+- **Official Copilot SDK (`github/copilot-sdk`):** JSON-RPC thin client that delegates to the Copilot CLI binary, which handles routing internally. SDK exposes `type` and `wireApi` in its provider config type.
+
+**Our approach:** Follow Pi's model-family-aware dispatch since Oxydra already has separate `Openai`, `OpenaiResponses`, and `Anthropic` provider implementations. A new `CopilotProvider` wraps and dispatches to the correct inner provider based on the model name, ensuring Claude models get native Anthropic features and GPT-5+ models get Responses API support.
 
 #### OpenAI Codex (PKCE Auth Code Flow)
 
@@ -184,13 +207,14 @@ Based on Pi's `google-gemini-cli.ts` and Gemini CLI source:
 ### Provider Registry Entry (types/src/config.rs)
 
 ```toml
-# GitHub Copilot via OAuth
+# GitHub Copilot via OAuth (multi-API routing)
 [providers.registry.copilot]
-provider_type = "openai"
+provider_type = "copilot"
 auth = "copilot"                      # NEW field
-catalog_provider = "github-copilot"   # skip standard openai catalog
+catalog_provider = "github-copilot"   # Copilot-specific model namespace
 # base_url auto-set from copilot token's proxy-ep field
 # extra_headers auto-set for Copilot compatibility
+# model-aware dispatch: Claude→Anthropic API, GPT-4→completions, GPT-5→responses
 
 # OpenAI via Codex OAuth (ChatGPT Plus/Pro subscription)
 [providers.registry.codex]
@@ -408,8 +432,64 @@ impl From<OAuthError> for ProviderError {
   - `AuthMethod::Codex` → `Arc::new(CodexTokenSource::from_store(...))`
   - `AuthMethod::GeminiCli` → `Arc::new(GeminiCliTokenSource::from_store(...))`
 - `build_provider()` calls `build_token_source()` and passes the result to provider constructors
-- For Copilot: override `base_url` to use the Copilot API endpoint derived from the token's `proxy-ep` field, and inject Copilot-specific extra headers
+- For `ProviderType::Copilot`: build a `CopilotProvider` (see 1d-copilot below)
 - For Gemini CLI: no `base_url` change, but switch from `x-goog-api-key` to `Bearer` auth header
+
+#### 1d-copilot. Add `ProviderType::Copilot` and `CopilotProvider`
+
+**File:** `crates/types/src/config.rs`
+
+- Add `Copilot` variant to `ProviderType` enum
+
+**File:** `crates/provider/src/copilot.rs` (new)
+
+The `CopilotProvider` implements `Provider` and dispatches to the correct inner provider based on the model name:
+
+```rust
+pub struct CopilotProvider {
+    token_source: Arc<dyn TokenSource>,
+    base_url: String,
+    extra_headers: HashMap<String, String>,
+    // Lazily-constructed inner providers, all sharing the same token_source + base_url
+    anthropic: AnthropicProvider,       // For Claude models
+    openai: OpenAIProvider,             // For GPT-4/4o, Gemini models
+    responses: OpenAIResponsesProvider, // For GPT-5+ models
+}
+
+impl CopilotProvider {
+    /// Determine which wire API to use based on the model name.
+    fn wire_api_for_model(model: &str) -> CopilotWireApi {
+        if model.starts_with("claude-") {
+            CopilotWireApi::AnthropicMessages
+        } else if model.starts_with("gpt-5") || model.starts_with("o4-") || model.starts_with("o3-") {
+            CopilotWireApi::OpenAIResponses
+        } else {
+            // Default: GPT-4/4o, Gemini, and anything unrecognized
+            CopilotWireApi::OpenAICompletions
+        }
+    }
+}
+
+enum CopilotWireApi {
+    AnthropicMessages,
+    OpenAICompletions,
+    OpenAIResponses,
+}
+```
+
+Key implementation details:
+- All three inner providers share the same `Arc<dyn TokenSource>` (CopilotTokenSource) and base URL
+- The Anthropic inner provider uses `authToken` (Bearer) instead of `apiKey` — Copilot's Anthropic endpoint uses Bearer auth, not `x-api-key`
+- Extra headers are injected on all requests: `Editor-Version`, `Editor-Plugin-Version`, `Copilot-Integration-Id` (static), `X-Initiator`, `Openai-Intent` (dynamic per-request, based on Pi's `buildCopilotDynamicHeaders`)
+- Model name prefix matching (`claude-`, `gpt-5`, `o4-`, `o3-`) follows Pi's model catalog. The mapping should be a simple function, not a hardcoded list, so new models work without code changes.
+- If the model prefix is unrecognized, default to OpenAI Chat Completions (safest common denominator)
+
+**File:** `crates/provider/src/lib.rs`
+
+- `build_provider()` handles `ProviderType::Copilot`:
+  - Extracts `base_url` from the Copilot token's `proxy-ep` field (e.g., `proxy.individual.githubcopilot.com` → `https://api.individual.githubcopilot.com`)
+  - Constructs all three inner providers with the shared token source and base URL
+  - Wraps in `CopilotProvider`
 
 #### 1e. Add `ProviderError::AuthExpired` and update `ReliableProvider`
 
@@ -1054,21 +1134,27 @@ The existing onboarding check (`check_provider_configured`) only looks for `api_
 
 ### Phase 4: Model Catalog for Copilot
 
-**Goal:** Support Copilot's model namespace.
+**Goal:** Support Copilot's model namespace and wire API mapping.
 
 **Why only Copilot needs catalog changes:**
 - **Codex OAuth** uses `provider_type = "openai_responses"` against the standard `api.openai.com` endpoint. Same models as API key access → validates against the existing `openai` catalog namespace. No changes needed.
 - **Gemini CLI OAuth** uses `provider_type = "gemini"` against the standard `generativelanguage.googleapis.com` endpoint. Same models as API key access → validates against the existing `google` catalog namespace. No changes needed.
-- **Copilot** uses `provider_type = "openai"` against `api.githubcopilot.com`, which exposes models from multiple providers (GPT-4o, Claude, Gemini) under Copilot-specific model IDs. These don't exist in the `openai` catalog namespace.
+- **Copilot** uses `provider_type = "copilot"` against `api.githubcopilot.com`, which exposes models from multiple providers (GPT-4o, Claude, Gemini) under Copilot-specific model IDs. These don't exist in any single existing catalog namespace.
 
 #### 4a. Copilot catalog provider
 
-The GitHub Copilot API serves OpenAI-compatible models but with different model IDs and capabilities. Options:
+The GitHub Copilot API serves models from multiple vendors, each requiring a different wire API format (see "Copilot Multi-API Routing" above). The catalog must capture both the model IDs and their wire API type.
 
-- **Option A (simple):** Use `catalog.skip_catalog_validation = true` with capability overrides on the registry entry. This works today with zero catalog changes.
-- **Option B (proper):** Add a `github-copilot` namespace to the model catalog with known Copilot models (claude-sonnet-4, gpt-4o, o3-mini, etc.).
+Options:
 
-Recommend **Option A** for initial release, with Option B as a follow-up.
+- **Option A (simple):** Use `catalog.skip_catalog_validation = true` with capability overrides on the registry entry. Wire API routing is handled by prefix matching in `CopilotProvider::wire_api_for_model()` (see Phase 1d-copilot). This works today with zero catalog changes.
+- **Option B (proper):** Add a `github-copilot` namespace to the model catalog with known Copilot models and their wire API type as metadata. This enables model discovery via `oxydra catalog list --provider copilot` and makes the wire API mapping explicit rather than inferred from prefixes.
+
+Recommend **Option A** for initial release, with Option B as a follow-up. The prefix-based routing in `CopilotProvider` is sufficient and matches how Pi handles it (Pi's model catalog tags each model with its `api` field, but the actual dispatch logic is prefix-based).
+
+#### 4b. Copilot model discovery (future enhancement)
+
+The Copilot token exchange response (`api.github.com/copilot_internal/v2/token`) includes model capability information. A future `oxydra auth status --models` command could query this to show which models the user's subscription grants access to, along with their wire API type. This would also feed into Option B's catalog if implemented.
 
 ### Phase 5: Guest VM Token Forwarding
 
@@ -1088,7 +1174,7 @@ The guest VM cannot perform OAuth flows or refresh tokens. The runner must rewri
 2. **Config rewriting:** For each `ProviderRegistryEntry` with an OAuth `auth` method:
    - Set `api_key` to the resolved token string
    - Set `auth` to `api_key` (the guest sees a plain API key, not OAuth)
-   - For Copilot: also set `base_url` and `extra_headers` explicitly
+   - For Copilot: also set `base_url` and `extra_headers` explicitly. The `provider_type` stays as `copilot` — the `CopilotProvider` works the same with a `StaticToken` wrapping the resolved Copilot bearer token. The model-aware dispatch is purely local logic.
 3. **Write the rewritten config** to the workspace config dir that gets mounted into the guest
 4. **Token refresh:** The guest can't refresh tokens. Two strategies:
    - **Phase 5a (simple):** Refresh at session start with a generous buffer. Copilot sessions are limited to ~25 min before the token expires. Acceptable for initial release.
@@ -1100,17 +1186,19 @@ The guest VM cannot perform OAuth flows or refresh tokens. The runner must rewri
 
 ## Phased Rollout
 
-### Phase 1: Foundation (Token Source + Storage + Config + 401 Retry)
+### Phase 1: Foundation (Token Source + Storage + Config + 401 Retry + CopilotProvider)
 **Deliverables:**
 - `AuthMethod` enum in types crate
+- `ProviderType::Copilot` variant in types crate
 - `ProviderError::AuthExpired` variant in types crate
 - `TokenSource` trait (with `force_refresh`) and `TokenStore` (with file locking) in provider crate
 - `OAuthError` type in provider crate
 - Provider constructors accept `Arc<dyn TokenSource>` instead of `String`
+- `CopilotProvider` with model-family-aware dispatch (Claude→Anthropic, GPT-4→Completions, GPT-5→Responses)
 - `ReliableProvider` retries on 401 with `force_refresh()` (max 1 retry)
-- `build_provider()` dispatches on `AuthMethod`
+- `build_provider()` dispatches on `AuthMethod` and handles `ProviderType::Copilot`
 - Gemini Bearer auth support
-- Unit tests for token store serialization/deserialization, 401 retry behavior
+- Unit tests for token store serialization/deserialization, 401 retry behavior, Copilot wire API routing
 
 **Gate:** `cargo test -p types -p provider` passes, existing API key auth unaffected, clippy -D warnings clean.
 
@@ -1158,7 +1246,7 @@ The guest VM cannot perform OAuth flows or refresh tokens. The runner must rewri
 
 ### Phase 4: Catalog & Polish
 **Deliverables:**
-- Copilot model catalog (or skip_catalog_validation guidance)
+- Copilot model catalog (or skip_catalog_validation guidance) + wire API mapping documentation
 - Example config snippets in `examples/config/agent.toml`
 - Guidebook chapter update
 
@@ -1215,6 +1303,8 @@ The guest VM cannot perform OAuth flows or refresh tokens. The runner must rewri
 | `check_provider_configured` with OAuth tokens | Unit | `crates/runner/src/web/` |
 | Existing API key auth unchanged | Regression | `crates/provider/src/tests.rs` |
 | Gemini Bearer vs x-goog-api-key dispatch | Unit | `crates/provider/src/gemini.rs` |
+| CopilotProvider wire API routing (model→provider dispatch) | Unit | `crates/provider/src/copilot.rs` |
+| CopilotProvider Anthropic path for Claude models | Integration | `crates/provider/src/copilot.rs` |
 | Guest VM config rewriting (OAuth→api_key) | Unit | `crates/runner/src/bootstrap.rs` |
 
 ---
@@ -1236,6 +1326,7 @@ These must be addressed in the stated phase — deferring them will cause silent
 |---|---|---|
 | **Hardcoded client IDs may be revoked** | Login flows break | These are the same IDs used by VS Code Copilot, Codex CLI, and Gemini CLI — revoking them would break those tools too. Add config overrides (`oauth.<provider>.client_id`) so users can substitute their own registered OAuth apps. Monitor for changes. |
 | **Copilot spoofed editor headers** | API rejects requests | Copilot requires `Editor-Version`, `Editor-Plugin-Version`, `Copilot-Integration-Id` headers that look like a real editor. If GitHub validates these more strictly, this breaks. No mitigation except monitoring — same risk as Pi/OpenCode. |
+| **Copilot wire API mismatch for new models** | Wrong API format used | If GitHub adds new model families (e.g., Mistral) that need a different wire API, prefix-based routing may pick the wrong format. Mitigation: default to OpenAI Completions (safest common denominator) and add config override for wire API per model. Monitor Copilot SDK and Pi for new model additions. |
 | **Copilot token ~30 min expiry** | Mid-session auth failures | `TokenSource.force_refresh()` called by `ReliableProvider` on 401. Proactive refresh with 5-min buffer before expiry. |
 | **Localhost port conflicts** (1455, 8085) | PKCE callback fails | Fallback to manual URL paste (same as Pi does). Ports are fixed by the provider's OAuth app redirect_uri allowlist — can't change them. |
 | **Google project discovery API changes** | Gemini CLI login breaks | The `v1internal` API is used by Gemini CLI itself — changes would break them too. Pin to known-working behavior. |
@@ -1253,7 +1344,7 @@ These must be addressed in the stated phase — deferring them will cause silent
 
 1. **Should `oxydra auth login` auto-create a provider registry entry?** Or require the user to configure it manually in agent.toml? Auto-creation is friendlier but more magic.
 2. **Token storage location:** `~/.config/oxydra/oauth_tokens.json` follows XDG, but the runner also supports `~/.oxydra/`. Should we check both?
-3. **Copilot model catalog:** Should we maintain a Copilot-specific model list, or always use `skip_catalog_validation`? Consider adding model discovery to `oxydra auth status` that queries available models.
+3. **Copilot model catalog:** Should we maintain a Copilot-specific model list with explicit wire API tags, or rely on prefix-based routing in `CopilotProvider`? Prefix matching is simpler and handles new models automatically, but explicit catalog entries give users visibility into available models and their capabilities. Consider adding model discovery to `oxydra auth status` that queries available models from the Copilot token exchange response.
 4. **`oxydra auth status` scope:** Should it also query and list available models per authenticated provider? This would help users discover what Copilot models their subscription grants access to.
 
 ## Resolved Decisions
@@ -1264,6 +1355,7 @@ These must be addressed in the stated phase — deferring them will cause silent
 - **CLI uses hyphens, internals use underscores** — `gemini-cli` at CLI boundary, `gemini_cli` everywhere else. Normalization in `auth.rs`.
 - **Client IDs are overridable** via config `oauth.<provider>.client_id` — mitigates revocation risk.
 - **Logout revokes server-side** (best-effort) for Google and GitHub tokens.
+- **Copilot uses model-family-aware API dispatch** (Pi approach, not OpenCode's single-endpoint approach). A `CopilotProvider` wraps `AnthropicProvider`, `OpenAIProvider`, and `OpenAIResponsesProvider`, dispatching based on model name prefix. This leverages Oxydra's existing separate provider implementations and ensures Claude models get native Anthropic features (extended thinking, proper tool use streaming) and GPT-5+ models get Responses API support. Research basis: Pi (`badlogic/pi-mono`) uses per-model-family dispatch; OpenCode routes everything through chat/completions (loses features); official Copilot SDK (`github/copilot-sdk`) confirms three wire formats via `ProviderConfig.type` and `wireApi` fields.
 - **Web configurator gets Copilot device code login + status display for all.** PKCE providers (Codex, Gemini) are CLI-only for login due to fixed `redirect_uri` constraints. This is a pragmatic split — device code was designed for exactly this use case.
 - **Remote/SSH uses auto-detected manual URL paste mode.** `SSH_TTY`/`SSH_CONNECTION` env vars trigger remote mode. `--no-browser` flag for explicit control. SSH port forwarding documented as power-user alternative.
 
