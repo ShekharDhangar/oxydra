@@ -6,7 +6,7 @@
 #                --target oxydra-vm -t oxydra-vm:latest \
 #                -f docker/Dockerfile.prebuilt .
 #
-#   docker build --build-arg BINARY=target/<triple>/release/shell-daemon \
+#   docker build --build-arg BINARY=target/<triple>/release/oxydra-shelld \
 #                --target shell-vm -t shell-vm:latest \
 #                -f docker/Dockerfile.prebuilt .
 
@@ -27,7 +27,7 @@ RUN chmod +x /usr/local/bin/oxydra-vm
 USER oxydra:oxydra
 ENTRYPOINT ["/usr/local/bin/oxydra-vm"]
 
-# --- shell-vm (shell-daemon sidecar) image ---
+# --- shell-vm (oxydra-shelld sidecar) image ---
 # Use Debian for glibc compatibility with third-party browser tooling such as
 # Pinchtab. Our own binaries are built as Linux musl targets, so they remain
 # portable across both Alpine and Debian-based images.
@@ -90,8 +90,8 @@ RUN ARCH=$(uname -m) && \
       -o /usr/local/bin/pinchtab && \
     chmod +x /usr/local/bin/pinchtab
 
-COPY ${BINARY} /usr/local/bin/shell-daemon
-RUN chmod +x /usr/local/bin/shell-daemon
+COPY ${BINARY} /usr/local/bin/oxydra-shelld
+RUN chmod +x /usr/local/bin/oxydra-shelld
 COPY docker/chromium-wrapper.sh /usr/local/bin/chromium-wrapper
 RUN chmod +x /usr/local/bin/chromium-wrapper
 COPY docker/shell-vm-entrypoint.sh /usr/local/bin/entrypoint.sh

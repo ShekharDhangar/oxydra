@@ -88,8 +88,8 @@ enum CatalogAction {
 
 #[derive(Debug, Clone, Parser, PartialEq, Eq)]
 #[command(
-    name = "runner",
-    about = "Oxydra runner control CLI",
+    name = "oxydra",
+    about = "Oxydra control CLI",
     version,
     long_version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("OXYDRA_GIT_HASH"), ")")
 )]
@@ -157,7 +157,7 @@ enum CliError {
         #[source]
         source: std::io::Error,
     },
-    #[error("no running server found for user `{user_id}`; start one with `runner start`")]
+    #[error("no running server found for user `{user_id}`; start one with `oxydra start`")]
     ServerNotRunning { user_id: String },
     #[error(
         "timed out waiting for server to stop for user `{user_id}`; \
@@ -171,11 +171,31 @@ enum CliError {
 }
 
 fn main() -> ExitCode {
+    emit_legacy_name_warning();
     if let Err(error) = run() {
-        eprintln!("runner error: {error}");
+        eprintln!("oxydra error: {error}");
         return ExitCode::from(1);
     }
     ExitCode::SUCCESS
+}
+
+/// Prints a deprecation warning when the binary is invoked via a legacy name
+/// (e.g. a `runner` symlink left by a previous install).
+fn emit_legacy_name_warning() {
+    let name = std::env::args().next().and_then(|a| {
+        Path::new(&a)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+    });
+    if let Some(name) = name
+        && name == "runner"
+    {
+        eprintln!(
+            "warning: the 'runner' binary has been renamed to 'oxydra'. \
+             Please update your scripts and PATH. \
+             The 'runner' name will stop working in a future release."
+        );
+    }
 }
 
 /// Resolves the runner config path, applying a `~/.oxydra/runner.toml` fallback
@@ -304,7 +324,7 @@ fn run() -> Result<(), CliError> {
                 "warning: {error}\n  \
                  The guest process may have failed to start. Check logs at:\n  \
                  {}/{VM_STDERR_LOG}\n  \
-                 Or run: runner logs --stream stderr",
+                 Or run: oxydra logs --stream stderr",
                 startup.workspace.logs.display()
             );
         }
@@ -459,7 +479,7 @@ fn server_start(runner: &Runner, user_id: &str, args: &CliArgs) -> Result<(), Cl
         {
             eprintln!(
                 "[oxydra] Update available: v{} (current: v{}). \
-                     Run `runner check-update` for details.",
+                     Run `oxydra check-update` for details.",
                 outcome.latest_version, outcome.current_version,
             );
         }
@@ -489,7 +509,7 @@ fn server_start(runner: &Runner, user_id: &str, args: &CliArgs) -> Result<(), Cl
                 "warning: {error}\n  \
                  The guest process may have failed to start. Check logs at:\n  \
                  {}/{VM_STDERR_LOG}\n  \
-                 Or run: runner logs --stream stderr",
+                 Or run: oxydra logs --stream stderr",
                 startup.workspace.logs.display()
             );
         }
@@ -901,7 +921,7 @@ fn run_daemon(startup: &mut runner::RunnerStartup) -> Result<(), CliError> {
             RunnerError::GuestLifecycle {
                 action: "bind_control_socket",
                 role: runner::RunnerGuestRole::OxydraVm,
-                program: "runner".to_owned(),
+                program: "oxydra".to_owned(),
                 source,
             }
         })?;
@@ -1111,7 +1131,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_defaults_to_start_mode() {
-        let args = CliArgs::try_parse_from(["runner"]).expect("default args should parse");
+        let args = CliArgs::try_parse_from(["oxydra"]).expect("default args should parse");
         assert_eq!(args.config_path, PathBuf::from(DEFAULT_RUNNER_CONFIG_PATH));
         assert_eq!(args.user_id, None);
         assert!(!args.insecure);
@@ -1122,7 +1142,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_accepts_tui_and_user_flags() {
-        let args = CliArgs::try_parse_from(["runner", "--tui", "--user", "alice"])
+        let args = CliArgs::try_parse_from(["oxydra", "--tui", "--user", "alice"])
             .expect("args should parse");
         assert!(args.tui);
         assert!(!args.probe);
@@ -1131,7 +1151,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_accepts_tui_with_probe_flag() {
-        let args = CliArgs::try_parse_from(["runner", "--tui", "--probe", "--user", "alice"])
+        let args = CliArgs::try_parse_from(["oxydra", "--tui", "--probe", "--user", "alice"])
             .expect("tui+probe args should parse");
         assert!(args.tui);
         assert!(args.probe);
@@ -1141,7 +1161,7 @@ mod tests {
     #[test]
     fn parse_cli_args_accepts_probe_without_tui() {
         let args =
-            CliArgs::try_parse_from(["runner", "--probe"]).expect("standalone probe should parse");
+            CliArgs::try_parse_from(["oxydra", "--probe"]).expect("standalone probe should parse");
         assert!(!args.tui);
         assert!(args.probe);
     }
@@ -1149,7 +1169,7 @@ mod tests {
     #[test]
     fn parse_cli_args_accepts_daemon_flag() {
         let args =
-            CliArgs::try_parse_from(["runner", "--daemon"]).expect("daemon args should parse");
+            CliArgs::try_parse_from(["oxydra", "--daemon"]).expect("daemon args should parse");
         assert!(args.daemon);
         assert!(!args.tui);
         assert!(!args.probe);
@@ -1158,7 +1178,7 @@ mod tests {
     #[test]
     fn parse_cli_args_rejects_missing_flag_value() {
         assert!(
-            CliArgs::try_parse_from(["runner", "--config"]).is_err(),
+            CliArgs::try_parse_from(["oxydra", "--config"]).is_err(),
             "missing value should fail clap parsing"
         );
     }
@@ -1206,7 +1226,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_accepts_catalog_show_subcommand() {
-        let args = CliArgs::try_parse_from(["runner", "catalog", "show"])
+        let args = CliArgs::try_parse_from(["oxydra", "catalog", "show"])
             .expect("catalog show should parse");
         assert_eq!(
             args.command,
@@ -1218,7 +1238,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_accepts_catalog_fetch_subcommand() {
-        let args = CliArgs::try_parse_from(["runner", "catalog", "fetch"])
+        let args = CliArgs::try_parse_from(["oxydra", "catalog", "fetch"])
             .expect("catalog fetch should parse");
         assert_eq!(
             args.command,
@@ -1230,7 +1250,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_accepts_catalog_fetch_with_pinned() {
-        let args = CliArgs::try_parse_from(["runner", "catalog", "fetch", "--pinned"])
+        let args = CliArgs::try_parse_from(["oxydra", "catalog", "fetch", "--pinned"])
             .expect("catalog fetch --pinned should parse");
         assert_eq!(
             args.command,
@@ -1242,7 +1262,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_accepts_catalog_verify_subcommand() {
-        let args = CliArgs::try_parse_from(["runner", "catalog", "verify"])
+        let args = CliArgs::try_parse_from(["oxydra", "catalog", "verify"])
             .expect("catalog verify should parse");
         assert_eq!(
             args.command,
@@ -1254,14 +1274,14 @@ mod tests {
 
     #[test]
     fn parse_cli_args_without_subcommand_has_no_command() {
-        let args = CliArgs::try_parse_from(["runner"]).expect("no subcommand should parse");
+        let args = CliArgs::try_parse_from(["oxydra"]).expect("no subcommand should parse");
         assert_eq!(args.command, None);
     }
 
     #[test]
     fn parse_cli_args_accepts_env_flags() {
         let args = CliArgs::try_parse_from([
-            "runner",
+            "oxydra",
             "-e",
             "FOO=bar",
             "-e",
@@ -1333,32 +1353,32 @@ mod tests {
 
     #[test]
     fn parse_cli_args_accepts_start_subcommand() {
-        let args = CliArgs::try_parse_from(["runner", "start"]).expect("start should parse");
+        let args = CliArgs::try_parse_from(["oxydra", "start"]).expect("start should parse");
         assert_eq!(args.command, Some(CliCommand::Start));
     }
 
     #[test]
     fn parse_cli_args_accepts_stop_subcommand() {
-        let args = CliArgs::try_parse_from(["runner", "stop"]).expect("stop should parse");
+        let args = CliArgs::try_parse_from(["oxydra", "stop"]).expect("stop should parse");
         assert_eq!(args.command, Some(CliCommand::Stop));
     }
 
     #[test]
     fn parse_cli_args_accepts_status_subcommand() {
-        let args = CliArgs::try_parse_from(["runner", "status"]).expect("status should parse");
+        let args = CliArgs::try_parse_from(["oxydra", "status"]).expect("status should parse");
         assert_eq!(args.command, Some(CliCommand::Status));
     }
 
     #[test]
     fn parse_cli_args_accepts_restart_subcommand() {
-        let args = CliArgs::try_parse_from(["runner", "restart"]).expect("restart should parse");
+        let args = CliArgs::try_parse_from(["oxydra", "restart"]).expect("restart should parse");
         assert_eq!(args.command, Some(CliCommand::Restart));
     }
 
     #[test]
     fn parse_cli_args_accepts_check_update_subcommand() {
         let args =
-            CliArgs::try_parse_from(["runner", "check-update"]).expect("check-update should parse");
+            CliArgs::try_parse_from(["oxydra", "check-update"]).expect("check-update should parse");
         assert_eq!(
             args.command,
             Some(CliCommand::CheckUpdate { pre_release: false })
@@ -1367,7 +1387,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_accepts_check_update_with_pre_release() {
-        let args = CliArgs::try_parse_from(["runner", "check-update", "--pre-release"])
+        let args = CliArgs::try_parse_from(["oxydra", "check-update", "--pre-release"])
             .expect("check-update --pre-release should parse");
         assert_eq!(
             args.command,
@@ -1377,7 +1397,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_stop_with_user_flag() {
-        let args = CliArgs::try_parse_from(["runner", "--user", "alice", "stop"])
+        let args = CliArgs::try_parse_from(["oxydra", "--user", "alice", "stop"])
             .expect("stop with --user should parse");
         assert_eq!(args.user_id.as_deref(), Some("alice"));
         assert_eq!(args.command, Some(CliCommand::Stop));
@@ -1385,7 +1405,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_start_with_env_flags() {
-        let args = CliArgs::try_parse_from(["runner", "-e", "MY_KEY=val", "--insecure", "start"])
+        let args = CliArgs::try_parse_from(["oxydra", "-e", "MY_KEY=val", "--insecure", "start"])
             .expect("start with env flags should parse");
         assert_eq!(args.command, Some(CliCommand::Start));
         assert_eq!(args.env_vars, vec!["MY_KEY=val"]);
@@ -1418,14 +1438,14 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("alice"), "error should mention user id: {msg}");
         assert!(
-            msg.contains("runner start"),
-            "error should suggest `runner start`: {msg}"
+            msg.contains("oxydra start"),
+            "error should suggest `oxydra start`: {msg}"
         );
     }
 
     #[test]
     fn parse_cli_args_accepts_logs_subcommand_with_defaults() {
-        let args = CliArgs::try_parse_from(["runner", "logs"]).expect("logs should parse");
+        let args = CliArgs::try_parse_from(["oxydra", "logs"]).expect("logs should parse");
         match args.command {
             Some(CliCommand::Logs {
                 role,
@@ -1449,7 +1469,7 @@ mod tests {
     #[test]
     fn parse_cli_args_accepts_logs_with_all_flags() {
         let args = CliArgs::try_parse_from([
-            "runner", "logs", "--role", "all", "--stream", "stderr", "--tail", "50", "--since",
+            "oxydra", "logs", "--role", "all", "--stream", "stderr", "--tail", "50", "--since",
             "15m", "--format", "json",
         ])
         .expect("logs with all flags should parse");
@@ -1475,7 +1495,7 @@ mod tests {
 
     #[test]
     fn parse_cli_args_accepts_logs_with_user_flag() {
-        let args = CliArgs::try_parse_from(["runner", "--user", "alice", "logs"])
+        let args = CliArgs::try_parse_from(["oxydra", "--user", "alice", "logs"])
             .expect("logs with --user should parse");
         assert_eq!(args.user_id.as_deref(), Some("alice"));
         assert!(matches!(args.command, Some(CliCommand::Logs { .. })));

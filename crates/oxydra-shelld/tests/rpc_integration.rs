@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
-use shell_daemon::{ShellDaemonConfig, ShellDaemonServer};
+use oxydra_shelld::{ShellDaemonConfig, ShellDaemonServer};
 use tokio::io::duplex;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use types::{

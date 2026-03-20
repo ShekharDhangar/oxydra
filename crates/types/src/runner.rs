@@ -90,7 +90,7 @@ pub enum WebAuthMode {
     Token,
 }
 
-/// Configuration for the embedded web configurator (`runner web`).
+/// Configuration for the embedded web configurator (`oxydra web`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WebConfig {
     /// Whether the web configurator is enabled.

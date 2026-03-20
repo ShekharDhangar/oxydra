@@ -1093,7 +1093,7 @@ fn temp_dir(label: &str) -> PathBuf {
         .expect("clock should be monotonic")
         .as_nanos();
     path.push(format!(
-        "oxydra-runner-{label}-{}-{unique}",
+        "oxydra-test-{label}-{}-{unique}",
         std::process::id()
     ));
     fs::create_dir_all(&path).expect("temp dir should be creatable");

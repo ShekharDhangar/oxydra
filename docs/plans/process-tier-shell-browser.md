@@ -659,7 +659,7 @@ Note: `LocalProcessShellSession::new()` returns `Result<Self, SandboxError>`, no
 
 **Shell policy enforcement**:
 
-`LocalProcessShellSession` needs to enforce the same allowlist/denylist/operator policy that the sidecar shell-daemon enforces. This can be done in `exec_command()` before delegating to `run_shell_command()`:
+`LocalProcessShellSession` needs to enforce the same allowlist/denylist/operator policy that the sidecar oxydra-shelld enforces. This can be done in `exec_command()` before delegating to `run_shell_command()`:
 
 ```rust
 impl ShellSession for LocalProcessShellSession {
@@ -688,7 +688,7 @@ The `validate_command()` method checks:
 - command does not match any denylist pattern
 - command does not use shell operators (`&&`, `||`, `|`, `;`) unless `allow_operators` is true
 
-This validation logic may already exist in the sidecar shell-daemon. If so, extract it into a shared utility in `crates/tools/src/sandbox/` or `crates/types/`.
+This validation logic may already exist in the sidecar oxydra-shelld. If so, extract it into a shared utility in `crates/tools/src/sandbox/` or `crates/types/`.
 
 #### `crates/tools/src/lib.rs`
 
@@ -1387,7 +1387,7 @@ Mitigation: ship shell first (Phase 2) without waiting for browser. Browser is P
 
 ### Risk 3: Shell policy enforcement parity
 
-The sidecar shell-daemon enforces allowlist/denylist/operator policy. `LocalProcessShellSession` does not currently enforce any policy — it runs commands directly. If policy enforcement is incomplete, process-tier shell would be more permissive than sidecar shell.
+The sidecar oxydra-shelld enforces allowlist/denylist/operator policy. `LocalProcessShellSession` does not currently enforce any policy — it runs commands directly. If policy enforcement is incomplete, process-tier shell would be more permissive than sidecar shell.
 
 Mitigation: extract shell policy validation into a shared utility and use it in both sidecar and local paths. Test the validation logic thoroughly.
 

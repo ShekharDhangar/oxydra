@@ -153,23 +153,23 @@ pub enum SandboxError {
     EmptyCommand,
     #[error("shell session request failed: {0}")]
     Transport(#[from] io::Error),
-    #[error("failed to serialize shell-daemon request: {0}")]
+    #[error("failed to serialize oxydra-shelld request: {0}")]
     SerializeRequest(#[source] serde_json::Error),
-    #[error("failed to decode shell-daemon response: {0}")]
+    #[error("failed to decode oxydra-shelld response: {0}")]
     DeserializeResponse(#[source] serde_json::Error),
-    #[error("shell-daemon connection closed before a response frame was received")]
+    #[error("oxydra-shelld connection closed before a response frame was received")]
     ConnectionClosed,
-    #[error("shell-daemon returned error response: {message}")]
+    #[error("oxydra-shelld returned error response: {message}")]
     ShellDaemon {
         request_id: Option<String>,
         message: String,
     },
-    #[error("unexpected shell-daemon response: expected {expected}, got {actual}")]
+    #[error("unexpected oxydra-shelld response: expected {expected}, got {actual}")]
     UnexpectedResponse {
         expected: &'static str,
         actual: &'static str,
     },
-    #[error("shell-daemon rejected request `{request_id}`")]
+    #[error("oxydra-shelld rejected request `{request_id}`")]
     ShellDaemonRejected { request_id: String },
     #[error("command execution timed out after {timeout_secs}s")]
     CommandTimeout { timeout_secs: u64 },
@@ -1119,7 +1119,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use shell_daemon::ShellDaemonServer;
+    use oxydra_shelld::ShellDaemonServer;
     use tokio::io::duplex;
     use types::SidecarTransport;
 

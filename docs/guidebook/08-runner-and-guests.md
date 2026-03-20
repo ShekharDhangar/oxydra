@@ -2,7 +2,7 @@
 
 ## Overview
 
-The runner (`oxydra-runner`) is the host-side entry point for Oxydra. Its single responsibility is to spawn and wire isolated execution environments, then stand aside. The runner does not execute user code, does not access user data contents, and does not participate in agent turns.
+The runner (`oxydra`) is the host-side entry point for Oxydra. Its single responsibility is to spawn and wire isolated execution environments, then stand aside. The runner does not execute user code, does not access user data contents, and does not participate in agent turns.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ The runner (`oxydra-runner`) is the host-side entry point for Oxydra. Its single
 │                    Host Machine                      │
 │                                                      │
 │  ┌──────────────┐                                    │
-│  │ oxydra-runner │                                   │
+│  │    oxydra     │                                   │
 │  │  (main.rs)   │                                    │
 │  └───────┬──────┘                                    │
 │          │ spawn per-user pair                       │
@@ -40,7 +40,7 @@ The runner (`oxydra-runner`) is the host-side entry point for Oxydra. Its single
 
 ## Runner Startup Flow
 
-When you run `oxydra-runner`:
+When you run `oxydra`:
 
 1. **CLI parsing** — reads `--config`, `--user`, `--insecure`, `--tui` flags and the subcommand (`start`, `stop`, `status`, `restart`, `catalog`)
 2. **Global config loading** — reads `runner.toml` (workspace root, user registrations, default tier, guest images)
@@ -59,25 +59,25 @@ The runner CLI provides four top-level subcommands for managing daemon sessions:
 
 | Command | Description |
 |---------|-------------|
-| `runner start` | Launch guest sandbox and enter daemon mode |
-| `runner stop` | Send shutdown to a running daemon via its control socket |
-| `runner status` | Query health and capability info from a running daemon |
-| `runner restart` | Stop an existing daemon (if running), then start a new one |
+| `oxydra start` | Launch guest sandbox and enter daemon mode |
+| `oxydra stop` | Send shutdown to a running daemon via its control socket |
+| `oxydra status` | Query health and capability info from a running daemon |
+| `oxydra restart` | Stop an existing daemon (if running), then start a new one |
 
 All commands accept `--config`, `--user`, and other global flags. The `start` and `restart` commands also accept `--insecure`, `--env`, and `--env-file`.
 
 ```bash
 # Start a session
-runner --user alice start
+oxydra --user alice start
 
 # Check status
-runner --user alice status
+oxydra --user alice status
 
 # Stop
-runner --user alice stop
+oxydra --user alice stop
 
 # Restart with extra env vars
-runner --user alice -e API_KEY=xxx restart
+oxydra --user alice -e API_KEY=xxx restart
 ```
 
 ### Control Socket Protocol
@@ -88,20 +88,20 @@ Each daemon binds a Unix domain socket at `<workspace>/ipc/runner-control.sock`.
 - **`status`** sends `RunnerControl::HealthCheck` — the daemon responds with `HealthStatus` containing user id, sandbox tier, tool availability, runtime PID, and degraded reasons.
 - **`restart`** sends a shutdown, waits for the socket file to be removed (with a 10-second timeout and forced cleanup), then starts a new daemon.
 
-If the control socket doesn't exist or the connection is refused, `stop` and `status` return a clear "no running server" error with a hint to use `runner start`.
+If the control socket doesn't exist or the connection is refused, `stop` and `status` return a clear "no running server" error with a hint to use `oxydra start`.
 
-The legacy `--daemon` flag continues to work for backward compatibility — it enters the same daemon loop as `runner start` after the existing startup sequence.
+The legacy `--daemon` flag continues to work for backward compatibility — it enters the same daemon loop as `oxydra start` after the existing startup sequence.
 
-### Web Configurator (`runner web`)
+### Web Configurator (`oxydra web`)
 
-The `runner web` subcommand starts an HTTP-based web configurator that provides a browser UI and REST API for configuration management, daemon lifecycle control, and log viewing.
+The `oxydra web` subcommand starts an HTTP-based web configurator that provides a browser UI and REST API for configuration management, daemon lifecycle control, and log viewing.
 
 ```bash
 # Start the web configurator (default bind: 127.0.0.1:9400)
-runner web
+oxydra web
 
 # Custom bind address
-runner web --bind 0.0.0.0:8080
+oxydra web --bind 0.0.0.0:8080
 ```
 
 The web configurator runs as an independent process, separate from per-user daemons. It:
@@ -271,13 +271,13 @@ Startup sequence:
 
 ## Shell Daemon
 
-**Files:** `shell-daemon/src/lib.rs` (library), `shell-daemon/src/bin/shell-daemon.rs` (binary)
+**Files:** `oxydra-shelld/src/lib.rs` (library), `oxydra-shelld/src/bin/oxydra-shelld.rs` (binary)
 
-The shell daemon runs inside `shell-vm` and provides an RPC interface for shell command and browser session execution. The standalone `shell-daemon` binary is a thin wrapper that accepts a `--socket <PATH>` argument, removes any stale socket file, binds a `UnixListener`, and delegates to `ShellDaemonServer::serve_unix_listener()`.
+The shell daemon runs inside `shell-vm` and provides an RPC interface for shell command and browser session execution. The standalone `oxydra-shelld` binary is a thin wrapper that accepts a `--socket <PATH>` argument, removes any stale socket file, binds a `UnixListener`, and delegates to `ShellDaemonServer::serve_unix_listener()`.
 
 In container/MicroVM tiers, the runner launches the `shell-vm` container with:
 ```
-ENTRYPOINT ["/usr/local/bin/shell-daemon"]
+ENTRYPOINT ["/usr/local/bin/oxydra-shelld"]
 CMD ["--socket", "/ipc/shell-daemon.sock"]
 ```
 
@@ -286,7 +286,7 @@ The ShellVm container uses virtual mount paths instead of host paths:
 - Host workspace `tmp/` → mounted at `/tmp`
 - Host workspace IPC directory → mounted at `/ipc`
 
-This means commands like `pwd` return `/shared` rather than the host path, preventing host filesystem details from leaking to the LLM. The shell-daemon socket at `/ipc/shell-daemon.sock` maps to the same physical file as the host-side path via the bind mount, so the `oxydra-vm` container can reach it without any network configuration.
+This means commands like `pwd` return `/shared` rather than the host path, preventing host filesystem details from leaking to the LLM. The oxydra-shelld socket at `/ipc/shell-daemon.sock` maps to the same physical file as the host-side path via the bind mount, so the `oxydra-vm` container can reach it without any network configuration.
 
 ### Protocol
 
@@ -338,31 +338,31 @@ Two backends implement the `ShellSession` trait:
 
 | Backend | Use Case | Mechanism |
 |---------|----------|-----------|
-| `VsockShellSession` | Production (Container/MicroVM) | Connects to shell-daemon over vsock/Unix socket |
+| `VsockShellSession` | Production (Container/MicroVM) | Connects to oxydra-shelld over vsock/Unix socket |
 | `LocalProcessShellSession` | Development/Testing | Spawns host processes directly |
 
 ## Browser Sidecar (Pinchtab)
 
-When the browser tool is enabled for the workspace in `agent.toml` (`[tools.browser] enabled = true`) and not restricted off for the current user in `runner-user.toml` (`[behavior] browser_enabled = false`), the runner provisions a [Pinchtab](https://github.com/pinchtab/pinchtab) process alongside `shell-daemon` inside the same `shell-vm` container. Pinchtab is a headless Chrome automation server with a REST API. The agent drives the browser via `curl` commands through the existing `shell_exec` tool, guided by the Browser Automation skill injected into the system prompt (see Chapter 14).
+When the browser tool is enabled for the workspace in `agent.toml` (`[tools.browser] enabled = true`) and not restricted off for the current user in `runner-user.toml` (`[behavior] browser_enabled = false`), the runner provisions a [Pinchtab](https://github.com/pinchtab/pinchtab) process alongside `oxydra-shelld` inside the same `shell-vm` container. Pinchtab is a headless Chrome automation server with a REST API. The agent drives the browser via `curl` commands through the existing `shell_exec` tool, guided by the Browser Automation skill injected into the system prompt (see Chapter 14).
 
 Browser provisioning is skipped entirely in `Process` tier — the browser tool requires container isolation.
 
 ### Entrypoint Script
 
-The shell-vm container uses a launcher script (`docker/shell-vm-entrypoint.sh`) as its entrypoint instead of running `shell-daemon` directly. It performs five steps:
+The shell-vm container uses a launcher script (`docker/shell-vm-entrypoint.sh`) as its entrypoint instead of running `oxydra-shelld` directly. It performs five steps:
 
 1. **Cleans Chrome singleton locks** left by any previous crash.
 2. **Starts Pinchtab** and waits up to 60 s for the `/health` endpoint to respond.
 3. **Pre-warms Chrome** — sends a `POST /navigate` with `about:blank` to force Chrome initialisation before the LLM ever makes a browser request, eliminating first-request startup latency.
 4. **Launches a crash-recovery watchdog** as a background subshell that polls Pinchtab health every 60 s; if the endpoint stops responding it kills the old process, cleans singleton locks, and restarts Pinchtab.
-5. **Starts shell-daemon** as a background process (not via `exec`) and then `wait`s for it.
+5. **Starts oxydra-shelld** as a background process (not via `exec`) and then `wait`s for it.
 
-**Critical: `exec` is NOT used for shell-daemon.** Using `exec` would replace the entrypoint shell (PID 1) with shell-daemon. When the entrypoint shell (PID 1) is replaced via `exec`, the background Pinchtab and watchdog processes are orphaned and killed by the kernel in this container environment. Instead, the entrypoint shell stays alive as PID 1, runs shell-daemon as a child process, and `wait`s for it. All children (Pinchtab, watchdog, shell-daemon) remain alive as children of PID 1 (the entrypoint shell) for the container's lifetime. When shell-daemon exits, the `wait` returns, the script exits with shell-daemon's exit code, and the container terminates.
+**Critical: `exec` is NOT used for oxydra-shelld.** Using `exec` would replace the entrypoint shell (PID 1) with oxydra-shelld. When the entrypoint shell (PID 1) is replaced via `exec`, the background Pinchtab and watchdog processes are orphaned and killed by the kernel in this container environment. Instead, the entrypoint shell stays alive as PID 1, runs oxydra-shelld as a child process, and `wait`s for it. All children (Pinchtab, watchdog, oxydra-shelld) remain alive as children of PID 1 (the entrypoint shell) for the container's lifetime. When oxydra-shelld exits, the `wait` returns, the script exits with oxydra-shelld's exit code, and the container terminates.
 
 `shell_exec` remains fully functional even if the browser component fails to start or requires a restart.
 
 **Key design constraints (learned from earlier attempts at crash recovery):**
-- No `exec` for shell-daemon — `exec` kills background children in this container environment; `wait` is used instead.
+- No `exec` for oxydra-shelld — `exec` kills background children in this container environment; `wait` is used instead.
 - No external restart script — complex scripts introduced race conditions and platform-specific breakage.
 - No `set -e` in the entrypoint — health-check polls and pre-warmup curl can return non-zero without being fatal; `|| true` guards are used explicitly.
 - 60 s watchdog poll interval — avoids false-positive restarts during transient load.
@@ -476,9 +476,9 @@ Both the Container and macOS MicroVM tiers use the same `launch_docker_container
 2. **Pulls** the image if it isn't present locally
 3. **Computes entrypoint and cmd** based on the guest role:
    - `OxydraVm` → `ENTRYPOINT ["/usr/local/bin/oxydra-vm"]` with `CMD ["--user-id", "<id>", "--workspace-root", "<path>", "--bootstrap-file", "/run/oxydra/bootstrap"]`
-   - `ShellVm` → `ENTRYPOINT ["/usr/local/bin/shell-daemon"]` with `CMD ["--socket", "/ipc/shell-daemon.sock"]`
+   - `ShellVm` → `ENTRYPOINT ["/usr/local/bin/oxydra-shelld"]` with `CMD ["--socket", "/ipc/shell-daemon.sock"]`
 4. **Creates** the container with:
-   - Host networking (`network_mode: "host"`) — the gateway binds `127.0.0.1:0` inside the container, reachable from the host; the shell-daemon socket is in a bind-mounted directory
+   - Host networking (`network_mode: "host"`) — the gateway binds `127.0.0.1:0` inside the container, reachable from the host; the oxydra-shelld socket is in a bind-mounted directory
    - Bind mounts — `OxydraVm` uses host paths directly; `ShellVm` uses virtual container paths (`/shared`, `/tmp`, `/ipc`) to prevent host path leakage
    - Bootstrap file bind-mounted read-only at `/run/oxydra/bootstrap` (OxydraVm only)
    - Resource limits (CPU, memory, PID)
@@ -503,7 +503,7 @@ Guest images can be built from `docker/Dockerfile` (full in-Docker build) or fro
 ./scripts/build-guest-images-in-docker.sh amd64
 ```
 
-The in-Docker build compiles both `oxydra-vm` and `shell-daemon` binaries in a shared Rust builder. The prebuilt path packages locally compiled binaries into Alpine-based runtime images.
+The in-Docker build compiles both `oxydra-vm` and `oxydra-shelld` binaries in a shared Rust builder. The prebuilt path packages locally compiled binaries into Alpine-based runtime images.
 
 Image names are configured in `runner.toml` under `[guest_images]`:
 ```toml
@@ -569,21 +569,21 @@ This file-based discovery avoids hardcoded ports and supports multiple concurren
 
 ## Retrieving Logs
 
-The `runner logs` command retrieves runtime and sidecar logs from the runner daemon without requiring Docker-specific knowledge or direct file access.
+The `oxydra logs` command retrieves runtime and sidecar logs from the runner daemon without requiring Docker-specific knowledge or direct file access.
 
 ### Usage
 
 ```bash
-runner --user alice logs                          # runtime stdout+stderr, last 200 lines, text
-runner --user alice logs --role sidecar           # sidecar (shell-vm) logs
-runner --user alice logs --role all               # both runtime and sidecar
-runner --user alice logs --stream stderr          # stderr only
-runner --user alice logs --tail 50                # last 50 lines
-runner --user alice logs --since 15m              # lines from the last 15 minutes
-runner --user alice logs --format json            # JSON output (one entry per line)
-runner --user alice logs --since 2026-03-01T10:00:00Z --format json --tail 100
-runner --user alice logs --follow                # continuously poll for new log lines
-runner --user alice logs -f --role all           # follow all roles (short flag)
+oxydra --user alice logs                          # runtime stdout+stderr, last 200 lines, text
+oxydra --user alice logs --role sidecar           # sidecar (shell-vm) logs
+oxydra --user alice logs --role all               # both runtime and sidecar
+oxydra --user alice logs --stream stderr          # stderr only
+oxydra --user alice logs --tail 50                # last 50 lines
+oxydra --user alice logs --since 15m              # lines from the last 15 minutes
+oxydra --user alice logs --format json            # JSON output (one entry per line)
+oxydra --user alice logs --since 2026-03-01T10:00:00Z --format json --tail 100
+oxydra --user alice logs --follow                # continuously poll for new log lines
+oxydra --user alice logs -f --role all           # follow all roles (short flag)
 ```
 
 ### Flags
@@ -624,7 +624,7 @@ Each entry includes:
 | Container   | `docker_api`   | bollard log stream with timestamps, written to the same files  |
 | MicroVM     | `docker_api`   | macOS: same as container; Linux: process-tier log pump          |
 
-All tiers write logs to the workspace `logs/` directory. The `runner logs` command reads from these files, normalizes entries, and returns a bounded response (max 128KB frame).
+All tiers write logs to the workspace `logs/` directory. The `oxydra logs` command reads from these files, normalizes entries, and returns a bounded response (max 128KB frame).
 
 ### Truncation
 

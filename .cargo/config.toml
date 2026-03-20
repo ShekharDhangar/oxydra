@@ -2,9 +2,9 @@
 #
 # Usage:
 #   cargo server               → same as: cargo run -p runner
-#   cargo server -- --insecure → passes extra args to runner
+#   cargo server -- --insecure → passes extra args to the oxydra binary
 #   cargo tui                  → same as: cargo run -p tui
-#   cargo sdaemon              → same as: cargo run -p shell-daemon
+#   cargo sdaemon              → same as: cargo run -p oxydra-shelld
 #
 # ARCHITECTURE — two separate processes, run each in its own terminal:
 #
@@ -12,9 +12,9 @@
 #   Terminal 2:  cargo tui -- <websocket-url>
 #
 # Dependency graph at build time:
-#   runner:       gateway + runtime + provider + tools + memory + sandbox + types
-#   tui:          types only  (connects to runner over WebSocket — no AI code)
-#   shell-daemon: types only  (shell execution helper for the shell tool)
+#   runner:        gateway + runtime + provider + tools + memory + sandbox + types
+#   tui:           types only  (connects to runner over WebSocket — no AI code)
+#   oxydra-shelld: types only  (shell execution helper for the shell tool)
 #
 # Conclusion: `cargo run -p runner` always recompiles ALL AI/provider/runtime
 # changes. There is no separate "compile step" needed.
@@ -22,4 +22,4 @@
 [alias]
 server  = "run -p runner"
 tui     = "run -p tui"
-sdaemon = "run -p shell-daemon"
+sdaemon = "run -p oxydra-shelld"

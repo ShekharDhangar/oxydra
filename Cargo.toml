@@ -8,7 +8,7 @@ members = [
   "crates/runtime",
   "crates/memory",
   "crates/runner",
-  "crates/shell-daemon",
+  "crates/oxydra-shelld",
   "crates/channels",
   "crates/gateway",
   "crates/tui",

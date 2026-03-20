@@ -385,7 +385,7 @@ When the reader task's channel closes (WebSocket disconnect):
 
 #### Standalone Binary
 
-`oxydra-tui` (`tui/src/bin/oxydra-tui.rs`) is a thin CLI entry point that parses `--gateway-endpoint` and `--user` arguments, generates a UUID connection ID, and runs `TuiApp` inside a multi-threaded tokio runtime. Runner-based endpoint discovery (`runner --tui`) execs this binary.
+`oxydra-tui` (`tui/src/bin/oxydra-tui.rs`) is a thin CLI entry point that parses `--gateway-endpoint` and `--user` arguments, generates a UUID connection ID, and runs `TuiApp` inside a multi-threaded tokio runtime. Runner-based endpoint discovery (`oxydra --tui`) execs this binary.
 
 ## Channel Registry
 

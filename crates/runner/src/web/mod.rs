@@ -47,7 +47,7 @@ pub enum WebServerError {
     Serve(#[from] std::io::Error),
 }
 
-/// Entry point for `runner web`. Loads config, builds the router, and runs
+/// Entry point for `oxydra web`. Loads config, builds the router, and runs
 /// the HTTP server until interrupted.
 pub async fn run_web_server(
     config_path: &Path,

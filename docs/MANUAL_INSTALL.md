@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/shantanugoel/oxydra/main/scripts/in
 Defaults:
 
 - Installs to `~/.local/bin`
-- Installs `runner`, `oxydra-vm`, `shell-daemon`, `oxydra-tui`
+- Installs `oxydra`, `oxydra-vm`, `oxydra-shelld`, `oxydra-tui`
 - Copies example configs to `<base-dir>/.oxydra/agent.toml`, `<base-dir>/.oxydra/runner.toml`, and `<base-dir>/.oxydra/users/alice.toml`
 - On upgrades, verifies release checksum (`SHA256SUMS`), backs up existing binaries/config, and updates existing `runner.toml` `[guest_images]` tags to the installed release tag (without replacing other settings)
 - Leaves existing config files unchanged outside the targeted image-tag update (use `--overwrite-config` to replace templates)
@@ -67,9 +67,9 @@ curl -fL -o "oxydra-${OXYDRA_TAG}-${PLATFORM}.tar.gz" \
 tar -xzf "oxydra-${OXYDRA_TAG}-${PLATFORM}.tar.gz"
 
 mkdir -p ~/.local/bin
-install -m 0755 runner ~/.local/bin/runner
+install -m 0755 oxydra ~/.local/bin/oxydra
 install -m 0755 oxydra-vm ~/.local/bin/oxydra-vm
-install -m 0755 shell-daemon ~/.local/bin/shell-daemon
+install -m 0755 oxydra-shelld ~/.local/bin/oxydra-shelld
 install -m 0755 oxydra-tui ~/.local/bin/oxydra-tui
 ```
 
@@ -123,7 +123,7 @@ Edit `.oxydra/agent.toml`:
 If you prefer a browser UI to editing TOML directly, the web configurator provides a guided interface for the same settings:
 
 ```bash
-runner --config .oxydra/runner.toml web
+oxydra --config .oxydra/runner.toml web
 ```
 
 Open **http://127.0.0.1:9400** and navigate to **Agent Config**. See [Quick Start — step 3](../README.md#3-configure-with-the-web-configurator) for details on the Core Setup section. Once saved, stop the web configurator with `Ctrl+C`.
@@ -154,21 +154,21 @@ export OPENAI_API_KEY=your-key-here
 Run the daemon in terminal 1:
 
 ```bash
-runner --config .oxydra/runner.toml --user alice start
+oxydra --config .oxydra/runner.toml --user alice start
 ```
 
 Connect TUI in terminal 2:
 
 ```bash
-runner --tui --config .oxydra/runner.toml --user alice
+oxydra --tui --config .oxydra/runner.toml --user alice
 ```
 
 Lifecycle commands:
 
 ```bash
-runner --config .oxydra/runner.toml --user alice status
-runner --config .oxydra/runner.toml --user alice stop
-runner --config .oxydra/runner.toml --user alice restart
+oxydra --config .oxydra/runner.toml --user alice status
+oxydra --config .oxydra/runner.toml --user alice stop
+oxydra --config .oxydra/runner.toml --user alice restart
 ```
 
 ### 6) If Docker is unavailable
@@ -176,8 +176,8 @@ runner --config .oxydra/runner.toml --user alice restart
 Use process mode (lower safety, no shell/browser tools):
 
 ```bash
-runner --config .oxydra/runner.toml --user alice --insecure start
-runner --tui --config .oxydra/runner.toml --user alice
+oxydra --config .oxydra/runner.toml --user alice --insecure start
+oxydra --tui --config .oxydra/runner.toml --user alice
 ```
 
 Even in `--insecure` mode, WASM tool policies still enforce path boundaries and web SSRF checks.
@@ -227,10 +227,10 @@ The web configurator provides a browser-based dashboard for managing Oxydra with
 
 ```bash
 # Start the web configurator
-runner --config .oxydra/runner.toml web
+oxydra --config .oxydra/runner.toml web
 
 # Custom bind address
-runner --config .oxydra/runner.toml web --bind 0.0.0.0:8080
+oxydra --config .oxydra/runner.toml web --bind 0.0.0.0:8080
 ```
 
 Then open `http://127.0.0.1:9400` in your browser. The dashboard offers:

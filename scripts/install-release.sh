@@ -41,7 +41,12 @@ INSTALL_COMPLETED=false
 ACTIVE_USERS=()
 STOPPED_USERS=()
 
-binaries=(runner oxydra-vm shell-daemon oxydra-tui)
+binaries=(oxydra oxydra-vm oxydra-shelld oxydra-tui)
+
+# Legacy binary names from before the rename (< v0.4.0).
+# Used to create backward-compatibility symlinks on upgrade.
+legacy_binary_map=(runner:oxydra shell-daemon:oxydra-shelld)
+managed_binaries=("${binaries[@]}" runner shell-daemon)
 
 usage() {
   cat <<'EOF'
@@ -225,6 +230,26 @@ install_binary_system() {
 
 should_use_sudo_for_install() {
   [[ "$SYSTEM_INSTALL" == "true" && "$(id -u)" -ne 0 ]]
+}
+
+resolve_current_runner_bin() {
+  local candidate
+  for candidate in "${INSTALL_DIR}/oxydra" "${INSTALL_DIR}/runner"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  printf '%s' "${INSTALL_DIR}/oxydra"
+}
+
+remove_installed_path() {
+  local path="$1"
+  if should_use_sudo_for_install; then
+    sudo rm -f "$path"
+  else
+    rm -f "$path"
+  fi
 }
 
 sha256_file() {
@@ -615,7 +640,9 @@ stop_active_runner_daemons() {
 copy_existing_binary_to_backup() {
   local source="$1"
   local destination="$2"
-  [[ -f "$source" ]] || return
+  if [[ ! -e "$source" && ! -L "$source" ]]; then
+    return 0
+  fi
 
   if should_use_sudo_for_install; then
     sudo cp "$source" "$destination"
@@ -640,7 +667,7 @@ rotate_backups() {
 create_backup() {
   local has_state=false
   local binary
-  for binary in "${binaries[@]}"; do
+  for binary in "${managed_binaries[@]}"; do
     if [[ -f "${INSTALL_DIR}/${binary}" ]]; then
       has_state=true
       break
@@ -669,7 +696,7 @@ create_backup() {
   BACKUP_PATH="${BACKUP_ROOT}/${version_label}-${timestamp}"
   mkdir -p "${BACKUP_PATH}/binaries"
 
-  for binary in "${binaries[@]}"; do
+  for binary in "${managed_binaries[@]}"; do
     copy_existing_binary_to_backup "${INSTALL_DIR}/${binary}" "${BACKUP_PATH}/binaries/${binary}"
   done
 
@@ -722,18 +749,21 @@ restore_from_backup() {
   fi
 
   if [[ -d "${BACKUP_PATH}/binaries" ]]; then
-    for binary in "${binaries[@]}"; do
+    for binary in "${managed_binaries[@]}"; do
       source="${BACKUP_PATH}/binaries/${binary}"
       destination="${INSTALL_DIR}/${binary}"
-      [[ -f "$source" ]] || continue
-      if [[ "$SYSTEM_INSTALL" == "true" ]]; then
-        if [[ "$(id -u)" -eq 0 ]]; then
-          install_binary_local "$source" "$destination" || restore_ok=false
+      if [[ -e "$source" || -L "$source" ]]; then
+        if [[ "$SYSTEM_INSTALL" == "true" ]]; then
+          if [[ "$(id -u)" -eq 0 ]]; then
+            install_binary_local "$source" "$destination" || restore_ok=false
+          else
+            install_binary_system "$source" "$destination" || restore_ok=false
+          fi
         else
-          install_binary_system "$source" "$destination" || restore_ok=false
+          install_binary_local "$source" "$destination" || restore_ok=false
         fi
       else
-        install_binary_local "$source" "$destination" || restore_ok=false
+        remove_installed_path "$destination" || restore_ok=false
       fi
     done
   fi
@@ -859,7 +889,7 @@ print_dry_run_plan() {
 
   local has_state=false
   local binary
-  for binary in "${binaries[@]}"; do
+  for binary in "${managed_binaries[@]}"; do
     if [[ -f "${INSTALL_DIR}/${binary}" ]]; then
       has_state=true
       break
@@ -983,16 +1013,16 @@ BASE_DIR="$(cd "$BASE_DIR" && pwd)"
 
 CONFIG_ROOT="${BASE_DIR}/.oxydra"
 RUNNER_CONFIG="${CONFIG_ROOT}/runner.toml"
-CURRENT_RUNNER_BIN="${INSTALL_DIR}/runner"
-RUNNER_BIN="${INSTALL_DIR}/runner"
+RUNNER_BIN="${INSTALL_DIR}/oxydra"
+CURRENT_RUNNER_BIN="$(resolve_current_runner_bin)"
 
 TARGET_VERSION_NORMALIZED="$(normalize_version "$TAG" || true)"
 if [[ -x "$CURRENT_RUNNER_BIN" ]]; then
   local_version_line="$("$CURRENT_RUNNER_BIN" --version 2>/dev/null | head -n 1 || true)"
   CURRENT_VERSION_NORMALIZED="$(normalize_version "$local_version_line" || true)"
-  if [[ -n "$CURRENT_VERSION_NORMALIZED" ]]; then
-    CURRENT_VERSION="v${CURRENT_VERSION_NORMALIZED}"
-  fi
+fi
+if [[ -n "$CURRENT_VERSION_NORMALIZED" ]]; then
+  CURRENT_VERSION="v${CURRENT_VERSION_NORMALIZED}"
 fi
 
 if [[ -z "$BACKUP_ROOT_OVERRIDE" ]]; then
@@ -1102,6 +1132,21 @@ for binary in "${binaries[@]}"; do
   log "  - ${binary}"
 done
 
+# Create backward-compatibility symlinks when upgrading from pre-rename installs.
+# New (fresh) installs skip this so they stay clean.
+for mapping in "${legacy_binary_map[@]}"; do
+  old_name="${mapping%%:*}"
+  new_name="${mapping##*:}"
+  old_path="${INSTALL_DIR}/${old_name}"
+  new_path="${INSTALL_DIR}/${new_name}"
+  if [[ -f "$old_path" && ! -L "$old_path" ]]; then
+    rm -f "$old_path"
+    ln -sf "$new_name" "$old_path"
+    warn "'${old_name}' has been renamed to '${new_name}'. A compatibility symlink was created."
+    warn "Please update your scripts. The symlink will be removed in a future release."
+  fi
+done
+
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
   cat <<EOF
 [oxydra-install] ${INSTALL_DIR} is not in PATH.
@@ -1128,7 +1173,7 @@ if [[ -n "$TARGET_VERSION_NORMALIZED" && -n "$CURRENT_VERSION_NORMALIZED" ]]; th
 else
   log "Done. Installed tag: ${TAG}"
 fi
-log "Binaries: ${INSTALL_DIR}/{runner,oxydra-vm,shell-daemon,oxydra-tui}"
+log "Binaries: ${INSTALL_DIR}/{$(IFS=,; echo "${binaries[*]}")}"
 if [[ "$SKIP_CONFIG" == "true" ]]; then
   log "Config: skipped (--skip-config)"
 else

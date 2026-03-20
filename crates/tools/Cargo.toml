@@ -29,7 +29,7 @@ wasmtime-wasi = { version = "42", optional = true }
 
 [dev-dependencies]
 memory = { path = "../memory" }
-shell-daemon = { path = "../shell-daemon" }
+oxydra-shelld = { path = "../oxydra-shelld" }
 tempfile = "3"
 tokio = { version = "1", features = ["full"] }
 tools-macros = { path = "../tools-macros" }

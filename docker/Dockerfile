@@ -19,8 +19,8 @@ RUN case "$(uname -m)" in \
     esac
 
 RUN rustup target add wasm32-wasip1 "$(cat /tmp/rust-target)"
-RUN cargo zigbuild --release --target "$(cat /tmp/rust-target)" --bin oxydra-vm --bin shell-daemon
-RUN strip /build/target/*/release/oxydra-vm /build/target/*/release/shell-daemon || true
+RUN cargo zigbuild --release --target "$(cat /tmp/rust-target)" --bin oxydra-vm --bin oxydra-shelld
+RUN strip /build/target/*/release/oxydra-vm /build/target/*/release/oxydra-shelld || true
 
 # --- oxydra-vm image ---
 FROM alpine:3 AS oxydra-vm
@@ -37,7 +37,7 @@ COPY --from=builder /build/target/*/release/oxydra-vm /usr/local/bin/oxydra-vm
 USER oxydra:oxydra
 ENTRYPOINT ["/usr/local/bin/oxydra-vm"]
 
-# --- shell-vm (shell-daemon sidecar) image ---
+# --- shell-vm (oxydra-shelld sidecar) image ---
 # Use Debian for glibc compatibility with third-party browser tooling such as
 # Pinchtab. Our own binaries are built as Linux musl targets, so they remain
 # portable across both Alpine and Debian-based images.
@@ -69,7 +69,7 @@ RUN ARCH=$(uname -m) && \
       -o /usr/local/bin/pinchtab && \
     chmod +x /usr/local/bin/pinchtab
 
-COPY --from=builder /build/target/*/release/shell-daemon /usr/local/bin/shell-daemon
+COPY --from=builder /build/target/*/release/oxydra-shelld /usr/local/bin/oxydra-shelld
 COPY docker/chromium-wrapper.sh /usr/local/bin/chromium-wrapper
 RUN chmod +x /usr/local/bin/chromium-wrapper
 COPY docker/shell-vm-entrypoint.sh /usr/local/bin/entrypoint.sh

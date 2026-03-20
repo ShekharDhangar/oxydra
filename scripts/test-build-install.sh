@@ -40,7 +40,7 @@ TARGET_NAME_LIST=()
 TARGET_PLATFORM_LIST=()
 TARGET_HOME_LIST=()
 
-BINARIES=(runner oxydra-vm shell-daemon oxydra-tui)
+BINARIES=(oxydra oxydra-vm oxydra-shelld oxydra-tui)
 
 SOURCE_CHECKOUT=""
 WORKTREE_DIR=""
@@ -597,7 +597,7 @@ tmp_dir="$(mktemp -d)"
 tar -xzf "$archive" -C "$tmp_dir"
 mkdir -p "$install_dir"
 
-for binary in runner oxydra-vm shell-daemon oxydra-tui; do
+for binary in oxydra oxydra-vm oxydra-shelld oxydra-tui; do
   [[ -f "${tmp_dir}/${binary}" ]] || { echo "missing binary: ${binary}" >&2; exit 1; }
   if command -v install >/dev/null 2>&1; then
     install -m 0755 "${tmp_dir}/${binary}" "${install_dir}/${binary}"
@@ -1020,7 +1020,7 @@ for target in "${TARGETS[@]}"; do
   fi
 
   tmp_wrapper="$(mktemp)"
-  write_runner_generic_wrapper_script "$tmp_wrapper" "${install_dir}/runner" "$runner_config" "$runner_env_file"
+  write_runner_generic_wrapper_script "$tmp_wrapper" "${install_dir}/oxydra" "$runner_config" "$runner_env_file"
 
   if [[ "$target_kind" == "local" ]]; then
     mkdir -p "$(dirname "$runner_wrapper")"

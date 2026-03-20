@@ -39,7 +39,7 @@ timezone = "America/New_York"
 The default is `UTC`. You can still override it for a single launch:
 
 ```bash
-runner --config .oxydra/runner.toml --user alice -e TZ=America/New_York start
+oxydra --config .oxydra/runner.toml --user alice -e TZ=America/New_York start
 ```
 
 `TZ` is forwarded to both guest containers. Use an IANA timezone such as `America/New_York` or `Asia/Kolkata`.

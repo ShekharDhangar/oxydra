@@ -1,11 +1,11 @@
 [package]
-name = "shell-daemon"
+name = "oxydra-shelld"
 version = "0.3.0"
 edition = "2024"
 
 [[bin]]
-name = "shell-daemon"
-path = "src/bin/shell-daemon.rs"
+name = "oxydra-shelld"
+path = "src/bin/oxydra-shelld.rs"
 
 [dependencies]
 bytes = "1"

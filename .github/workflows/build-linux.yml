@@ -50,4 +50,4 @@ jobs:
         run: rustup target add wasm32-wasip1
 
       - name: Build Linux binaries
-        run: cargo zigbuild --release --target ${{ matrix.rust_target }} --bin runner --bin oxydra-vm --bin shell-daemon --bin oxydra-tui
+        run: cargo zigbuild --release --target ${{ matrix.rust_target }} --bin oxydra --bin oxydra-vm --bin oxydra-shelld --bin oxydra-tui

@@ -130,7 +130,7 @@ Most tools (except `BashTool`) execute through the `WasmToolRunner` backend (`Wa
 The `BashTool` operates in three modes determined by the bootstrap environment:
 
 1. **Host** — direct execution via `std::process::Command` (local development)
-2. **Session** — forwarded to a `ShellSession` in the shell-daemon sidecar (production)
+2. **Session** — forwarded to a `ShellSession` in the oxydra-shelld sidecar (production)
 3. **Disabled** — rejects all execution if no safe execution environment is available
 
 ### Memory Tools

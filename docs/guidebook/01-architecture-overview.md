@@ -23,7 +23,7 @@ crates/
   runtime/        # Core — agent loop + state machine
   memory/         # Core — persistence + retrieval
   runner/         # Application — host orchestrator
-  shell-daemon/   # Application — guest shell/browser RPC
+  oxydra-shelld/   # Application — guest shell/browser RPC
   channels/       # Application — channel adapters
   gateway/        # Application — routing daemon
   tui/            # Application — terminal channel UI
@@ -36,7 +36,7 @@ The workspace enforces a strict three-layer dependency graph. Lower layers never
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   Application Layer                  │
-│  runner, shell-daemon, channels, gateway, tui        │
+│  runner, oxydra-shelld, channels, gateway, tui        │
 │  (depends on Core + Foundation)                      │
 ├─────────────────────────────────────────────────────┤
 │                      Core Layer                      │
@@ -44,7 +44,7 @@ The workspace enforces a strict three-layer dependency graph. Lower layers never
 │  (depends strictly on Foundation; intentional         │
 │   sub-layering: runtime → tools)                     │
 │  (dev-dependencies may cross layer boundaries        │
-│   for integration testing, e.g. shell-daemon)        │
+│   for integration testing, e.g. oxydra-shelld)        │
 ├─────────────────────────────────────────────────────┤
 │                   Foundation Layer                   │
 │  types                                               │
@@ -63,7 +63,7 @@ The workspace enforces a strict three-layer dependency graph. Lower layers never
 | Core | `runtime` | Agent turn loop, state machine, tool dispatch, self-correction, token budgeting, credential scrubbing, scheduler executor |
 | Core | `memory` | libSQL persistence, SQL migrations, hybrid retrieval (vector + FTS5), embedding pipeline, rolling summarization, scheduler store (schedule definitions + run history) |
 | Application | `runner` | Host entry point, per-user VM/container provisioning, bootstrap envelope, workspace directory creation, VM bootstrap logic (config loading via `figment`, provider/memory/tools initialization), web configurator (REST API + embedded SPA) |
-| Application | `shell-daemon` | Guest-side RPC server for shell command execution and browser session management |
+| Application | `oxydra-shelld` | Guest-side RPC server for shell command execution and browser session management |
 | Application | `channels` | Channel registry, concrete channel adapter implementations (feature-flagged) |
 | Application | `gateway` | Axum WebSocket server, session management, turn routing to `AgentRuntime` |
 | Application | `tui` | `TuiChannelAdapter` (Channel impl), gateway WebSocket client, terminal UI rendering |

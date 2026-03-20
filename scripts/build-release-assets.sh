@@ -228,9 +228,9 @@ copy_release_binaries() {
   local target="$1"
   local out_dir="$2"
   mkdir -p "$out_dir"
-  cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/runner" "$out_dir/runner"
+  cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/oxydra" "$out_dir/oxydra"
   cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/oxydra-vm" "$out_dir/oxydra-vm"
-  cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/shell-daemon" "$out_dir/shell-daemon"
+  cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/oxydra-shelld" "$out_dir/oxydra-shelld"
   cp "$CARGO_TARGET_DIR/$target/${PROFILE_DIR}/oxydra-tui" "$out_dir/oxydra-tui"
 }
 
@@ -238,7 +238,7 @@ package_platform_tarball() {
   local platform="$1"
   local platform_dir="$DIST_DIR/$platform"
   local archive="$DIST_DIR/oxydra-${TAG}-${platform}.tar.gz"
-  tar -C "$platform_dir" -czf "$archive" runner oxydra-vm shell-daemon oxydra-tui
+  tar -C "$platform_dir" -czf "$archive" oxydra oxydra-vm oxydra-shelld oxydra-tui
 }
 
 if "$BUILD_LINUX_AMD64" || "$BUILD_LINUX_ARM64"; then
@@ -250,9 +250,9 @@ if "$BUILD_LINUX_AMD64"; then
   echo "Building linux-amd64 binaries (${BUILD_PROFILE}) ..."
   OXYDRA_WASM_PREBUILT=1 run_cargo_zigbuild_with_profile \
     --target x86_64-unknown-linux-musl \
-    --bin runner \
+    --bin oxydra \
     --bin oxydra-vm \
-    --bin shell-daemon \
+    --bin oxydra-shelld \
     --bin oxydra-tui
   copy_release_binaries "x86_64-unknown-linux-musl" "$DIST_DIR/linux-amd64"
   package_platform_tarball "linux-amd64"
@@ -262,9 +262,9 @@ if "$BUILD_LINUX_ARM64"; then
   echo "Building linux-arm64 binaries (${BUILD_PROFILE}) ..."
   OXYDRA_WASM_PREBUILT=1 run_cargo_zigbuild_with_profile \
     --target aarch64-unknown-linux-musl \
-    --bin runner \
+    --bin oxydra \
     --bin oxydra-vm \
-    --bin shell-daemon \
+    --bin oxydra-shelld \
     --bin oxydra-tui
   copy_release_binaries "aarch64-unknown-linux-musl" "$DIST_DIR/linux-arm64"
   package_platform_tarball "linux-arm64"
@@ -274,9 +274,9 @@ if "$BUILD_MACOS_ARM64"; then
   echo "Building macos-arm64 binaries (${BUILD_PROFILE}) ..."
   run_cargo_build_with_profile \
     --target aarch64-apple-darwin \
-    --bin runner \
+    --bin oxydra \
     --bin oxydra-vm \
-    --bin shell-daemon \
+    --bin oxydra-shelld \
     --bin oxydra-tui
   copy_release_binaries "aarch64-apple-darwin" "$DIST_DIR/macos-arm64"
   package_platform_tarball "macos-arm64"
@@ -306,7 +306,7 @@ if "$BUILD_DOCKER" && { "$BUILD_LINUX_AMD64" || "$BUILD_LINUX_ARM64"; }; then
   if "$BUILD_LINUX_AMD64"; then
     mkdir -p "$STAGING_DIR/linux-amd64"
     cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/${PROFILE_DIR}/oxydra-vm" "$STAGING_DIR/linux-amd64/oxydra-vm"
-    cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/${PROFILE_DIR}/shell-daemon" "$STAGING_DIR/linux-amd64/shell-daemon"
+    cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/${PROFILE_DIR}/oxydra-shelld" "$STAGING_DIR/linux-amd64/oxydra-shelld"
 
     docker build \
       --platform linux/amd64 \
@@ -318,7 +318,7 @@ if "$BUILD_DOCKER" && { "$BUILD_LINUX_AMD64" || "$BUILD_LINUX_ARM64"; }; then
 
     docker build \
       --platform linux/amd64 \
-      --build-arg "BINARY=docker/staging/linux-amd64/shell-daemon" \
+      --build-arg "BINARY=docker/staging/linux-amd64/oxydra-shelld" \
       --target shell-vm \
       -t "${SHELL_IMAGE}:${TAG}-linux-amd64" \
       -f "$DOCKERFILE_PREBUILT" \
@@ -331,7 +331,7 @@ if "$BUILD_DOCKER" && { "$BUILD_LINUX_AMD64" || "$BUILD_LINUX_ARM64"; }; then
   if "$BUILD_LINUX_ARM64"; then
     mkdir -p "$STAGING_DIR/linux-arm64"
     cp "$CARGO_TARGET_DIR/aarch64-unknown-linux-musl/${PROFILE_DIR}/oxydra-vm" "$STAGING_DIR/linux-arm64/oxydra-vm"
-    cp "$CARGO_TARGET_DIR/aarch64-unknown-linux-musl/${PROFILE_DIR}/shell-daemon" "$STAGING_DIR/linux-arm64/shell-daemon"
+    cp "$CARGO_TARGET_DIR/aarch64-unknown-linux-musl/${PROFILE_DIR}/oxydra-shelld" "$STAGING_DIR/linux-arm64/oxydra-shelld"
 
     docker build \
       --platform linux/arm64 \
@@ -343,7 +343,7 @@ if "$BUILD_DOCKER" && { "$BUILD_LINUX_AMD64" || "$BUILD_LINUX_ARM64"; }; then
 
     docker build \
       --platform linux/arm64 \
-      --build-arg "BINARY=docker/staging/linux-arm64/shell-daemon" \
+      --build-arg "BINARY=docker/staging/linux-arm64/oxydra-shelld" \
       --target shell-vm \
       -t "${SHELL_IMAGE}:${TAG}-linux-arm64" \
       -f "$DOCKERFILE_PREBUILT" \

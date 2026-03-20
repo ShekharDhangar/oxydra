@@ -2,7 +2,11 @@
 name = "runner"
 version = "0.3.0"
 edition = "2024"
-default-run = "runner"
+default-run = "oxydra"
+
+[[bin]]
+name = "oxydra"
+path = "src/main.rs"
 
 [features]
 default = ["telegram"]

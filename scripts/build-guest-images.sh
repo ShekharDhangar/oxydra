@@ -63,8 +63,8 @@ cp "$WASM_TARGET_DIR/wasm32-wasip1/release/oxydra_wasm_guest.wasm" \
 
 # macos has a low fd limit, need to increasse it for zig
 ulimit -n 65536
-echo "Cross-compiling oxydra-vm and shell-daemon for $TARGET ..."
-OXYDRA_WASM_PREBUILT=1  cargo zigbuild --release --target "$TARGET" --bin oxydra-vm --bin shell-daemon
+echo "Cross-compiling oxydra-vm and oxydra-shelld for $TARGET ..."
+OXYDRA_WASM_PREBUILT=1  cargo zigbuild --release --target "$TARGET" --bin oxydra-vm --bin oxydra-shelld
 
 echo "Building Docker images for $PLATFORM ..."
 
@@ -77,7 +77,7 @@ CARGO_TARGET_DIR=$(cargo metadata --no-deps --format-version 1 | \
   python3 -c "import sys,json; print(json.load(sys.stdin)['target_directory'])")
 
 cp "$CARGO_TARGET_DIR/$TARGET/release/oxydra-vm"    "$STAGING_DIR/oxydra-vm"
-cp "$CARGO_TARGET_DIR/$TARGET/release/shell-daemon" "$STAGING_DIR/shell-daemon"
+cp "$CARGO_TARGET_DIR/$TARGET/release/oxydra-shelld" "$STAGING_DIR/oxydra-shelld"
 
 # ── package into Docker images ─────────────────────────────────────
 docker build \
@@ -90,7 +90,7 @@ docker build \
 
 docker build \
   --platform "$PLATFORM" \
-  --build-arg "BINARY=docker/staging/shell-daemon" \
+  --build-arg "BINARY=docker/staging/oxydra-shelld" \
   --target shell-vm \
   -t "shell-vm:$TAG" \
   -f "$REPO_ROOT/docker/Dockerfile.prebuilt" \

@@ -6,9 +6,9 @@
 # crash-recovery watchdog — all as long-lived child processes.
 #
 # IMPORTANT: this script deliberately does NOT use `exec` to hand off to
-# shell-daemon.  Using `exec` replaces the entrypoint shell (PID 1), which
+# oxydra-shelld.  Using `exec` replaces the entrypoint shell (PID 1), which
 # causes the kernel to kill background processes (Pinchtab, watchdog) in this
-# container environment.  Instead we run shell-daemon in the background and
+# container environment.  Instead we run oxydra-shelld in the background and
 # `wait` for it, keeping the shell alive as PID 1 so all children survive
 # for the lifetime of the container.
 #
@@ -138,17 +138,17 @@ if [ "${BROWSER_ENABLED}" = "true" ]; then
     ) &
 fi
 
-# ── Run shell-daemon and wait for it ─────────────────────────────────────────
-# shell-daemon is started as a child of this script rather than via exec so
+# ── Run oxydra-shelld and wait for it ─────────────────────────────────────────
+# oxydra-shelld is started as a child of this script rather than via exec so
 # that the Pinchtab and watchdog processes above remain alive as siblings
 # under this script (PID 1).  exec would replace PID 1 (the shell) and
 # orphan those siblings in a way that gets them killed in Docker.
-/usr/local/bin/shell-daemon "$@" &
+/usr/local/bin/oxydra-shelld "$@" &
 DAEMON_PID=$!
-echo "INFO: shell-daemon started (PID=${DAEMON_PID})" >&2
+echo "INFO: oxydra-shelld started (PID=${DAEMON_PID})" >&2
 
-# Forward SIGTERM / SIGINT to shell-daemon for graceful shutdown.
+# Forward SIGTERM / SIGINT to oxydra-shelld for graceful shutdown.
 trap 'kill -TERM $DAEMON_PID 2>/dev/null' TERM INT
 
-# Wait for shell-daemon.  When it exits the container exits with its code.
+# Wait for oxydra-shelld.  When it exits the container exits with its code.
 wait $DAEMON_PID

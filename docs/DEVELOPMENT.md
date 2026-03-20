@@ -114,7 +114,7 @@ crates/
   runtime/        Agent turn-loop runtime
   memory/         Persistent memory and retrieval
   runner/         Runner lifecycle and guest orchestration
-  shell-daemon/   Shell daemon protocol
+  oxydra-shelld/   Shell daemon protocol
   channels/       External channel adapters (Telegram)
   gateway/        WebSocket gateway server
   tui/            Terminal UI client

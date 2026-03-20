@@ -1468,7 +1468,7 @@ impl fmt::Display for GuestDiagnostic {
         if let Some(ref log_path) = self.log_path {
             write!(f, "\nFull logs: {}", log_path.display())?;
         }
-        write!(f, "\nOr run: runner logs --stream stderr")?;
+        write!(f, "\nOr run: oxydra logs --stream stderr")?;
         Ok(())
     }
 }

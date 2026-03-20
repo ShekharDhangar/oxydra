@@ -68,7 +68,7 @@ pub struct ShellDaemonServer {
 impl Default for ShellDaemonServer {
     fn default() -> Self {
         Self::new(ShellDaemonConfig::default())
-            .expect("default shell-daemon configuration must be valid")
+            .expect("default oxydra-shelld configuration must be valid")
     }
 }
 
@@ -107,7 +107,7 @@ impl ShellDaemonServer {
                 Err(source) => {
                     let response = ShellDaemonResponse::Error(ShellDaemonError {
                         request_id: None,
-                        message: format!("invalid shell-daemon request frame: {source}"),
+                        message: format!("invalid oxydra-shelld request frame: {source}"),
                     });
                     send_response(&mut framed, &response).await?;
                     continue;

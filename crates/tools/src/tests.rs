@@ -6,9 +6,9 @@ use std::{
 };
 
 use async_trait::async_trait;
-use serde_json::json;
 #[cfg(unix)]
-use shell_daemon::ShellDaemonServer;
+use oxydra_shelld::ShellDaemonServer;
+use serde_json::json;
 #[cfg(unix)]
 use tokio::net::UnixListener;
 use tokio::time::sleep;

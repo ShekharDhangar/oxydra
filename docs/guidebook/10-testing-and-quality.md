@@ -53,7 +53,7 @@ Uses `trybuild` to verify that the `#[tool]` macro:
 - **Session loop:** Agent loop with tool call reconstruction from streams and multi-turn execution
 - **Security policies:** Denial of out-of-workspace file access and command allowlist enforcement
 - **Data safety:** Scrubbing/redaction of sensitive strings from tool outputs
-- **Sidecar integration:** Shell command execution via Unix domain socket to shell-daemon
+- **Sidecar integration:** Shell command execution via Unix domain socket to oxydra-shelld
 - **Resilience:** Fallback from streaming to completion on failure; budget/limit enforcement
 - **Parallelism:** `ReadOnly` tools execute concurrently while `SideEffecting` tools run sequentially
 - **Scheduler executor:** Due schedule dispatching and run recording, conditional notification with `[NOTIFY]` marker (routes when present, silent when absent), `Never` notification policy (always silent), failed turn handling (records with `Failed` status), one-shot completion (marks `Completed` after success), empty tick behavior (no-op when no due schedules)

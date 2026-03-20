@@ -3443,6 +3443,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
+name = "oxydra-shelld"
+version = "0.3.0"
+dependencies = [
+ "bytes",
+ "clap",
+ "futures-util",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "types",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4361,10 +4376,10 @@ dependencies = [
  "jsonschema",
  "memory",
  "mockall",
+ "oxydra-shelld",
  "provider",
  "regex",
  "serde_json",
- "shell-daemon",
  "tiktoken-rs",
  "tokio",
  "tokio-util",
@@ -4846,21 +4861,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
-]
-
-[[package]]
-name = "shell-daemon"
-version = "0.3.0"
-dependencies = [
- "bytes",
- "clap",
- "futures-util",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
- "types",
 ]
 
 [[package]]
@@ -5681,10 +5681,10 @@ dependencies = [
  "futures-util",
  "html2text",
  "memory",
+ "oxydra-shelld",
  "reqwest",
  "serde",
  "serde_json",
- "shell-daemon",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

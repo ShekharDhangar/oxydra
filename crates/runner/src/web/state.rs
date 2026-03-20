@@ -47,7 +47,7 @@ impl WebState {
         let runner_executable = std::env::var_os("OXYDRA_WEB_RUNNER_EXECUTABLE")
             .map(PathBuf::from)
             .or_else(|| std::env::current_exe().ok())
-            .unwrap_or_else(|| PathBuf::from("runner"));
+            .unwrap_or_else(|| PathBuf::from("oxydra"));
         Self {
             global_config,
             config_path,
@@ -126,7 +126,7 @@ impl WebState {
         self.auth_token.as_deref()
     }
 
-    /// Returns the executable path used to spawn detached `runner start` daemons.
+    /// Returns the executable path used to spawn detached `oxydra start` daemons.
     pub fn runner_executable(&self) -> &Path {
         &self.runner_executable
     }
@@ -281,7 +281,7 @@ mod tests {
             bind_address: bind.to_owned(),
             allowed_hosts: allowed_host_values(bind, aliases),
             auth_token: None,
-            runner_executable: PathBuf::from("runner"),
+            runner_executable: PathBuf::from("oxydra"),
             spawned_daemon_pids: Arc::new(Mutex::new(HashMap::new())),
         }
     }

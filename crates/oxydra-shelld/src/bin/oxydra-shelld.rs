@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use shell_daemon::ShellDaemonServer;
+use oxydra_shelld::ShellDaemonServer;
 use tokio::net::UnixListener;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "shell-daemon",
+    name = "oxydra-shelld",
     about = "Oxydra shell daemon sidecar",
     version,
     long_version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("OXYDRA_GIT_HASH"), ")")
@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let listener = UnixListener::bind(&args.socket)?;
     eprintln!(
-        "shell-daemon listening on {}",
+        "oxydra-shelld listening on {}",
         args.socket.to_string_lossy()
     );
 

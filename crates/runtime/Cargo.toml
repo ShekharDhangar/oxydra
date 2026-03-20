@@ -22,5 +22,5 @@ uuid = { version = "1", features = ["v4"] }
 [dev-dependencies]
 mockall = "0.14"
 provider = { path = "../provider" }
-shell-daemon = { path = "../shell-daemon" }
+oxydra-shelld = { path = "../oxydra-shelld" }
 tokio = { version = "1", features = ["full"] }

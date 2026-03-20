@@ -19,7 +19,7 @@ This chapter tracks the implementation status of all 21 phases, documents identi
 | 9 | Context window + hybrid retrieval | **Complete** | Token budgeting, FTS5, vector search, fastembed/blake3, note storage/deletion API. **Gap: upsert_chunks unimplemented** |
 | 10 | Runner + isolation infrastructure | **Complete** | Runner, bootstrap envelope, shell daemon, sandbox tiers. Resolved: daemon mode, container/microvm bootstrap delivery, Firecracker config generation, control plane metadata. **Gap: Docker container log capture pending.** |
 | 11 | Security policy + WASM tool isolation | **Complete** | Security policy, SSRF protection, scrubbing. All Phase 11 gaps resolved: real wasmtime + WASI sandboxing with preopened directory enforcement. |
-| 12 | Channel trait + TUI + gateway daemon | **Complete** | Channel trait, TUI adapter, gateway WebSocket server, ratatui rendering loop, standalone `oxydra-tui` binary, `runner --tui` exec wiring. **Resolved:** multi-line input (Alt+Enter), runtime activity visibility (`TurnProgress`). **Protocol v2:** `runtime_session_id` renamed to `session_id` throughout; `GatewayClientHello` gains `create_new_session` field; `ToolExecutionContext` threaded as parameter (not shared state) for concurrent-session safety. |
+| 12 | Channel trait + TUI + gateway daemon | **Complete** | Channel trait, TUI adapter, gateway WebSocket server, ratatui rendering loop, standalone `oxydra-tui` binary, `oxydra --tui` exec wiring. **Resolved:** multi-line input (Alt+Enter), runtime activity visibility (`TurnProgress`). **Protocol v2:** `runtime_session_id` renamed to `session_id` throughout; `GatewayClientHello` gains `create_new_session` field; `ToolExecutionContext` threaded as parameter (not shared state) for concurrent-session safety. |
 | 13 | Model catalog + provider registry | **Complete** | Provider registry, Gemini, Responses, catalog commands, caps overrides, cached catalog resolution, `skip_catalog_validation` escape hatch, updated CLI (`fetch --pinned`, unfiltered cache) |
 | 14 | External channels + identity mapping | **Complete** | Telegram adapter, sender auth/audit, durable channel session mapping, forum-topic threading, and edit-message streaming are implemented. |
 | 15 | Multi-agent orchestration | In Progress | Agent definitions, delegation primitives, agent-specific model routing, and gateway concurrency/session eviction are implemented; advanced orchestration graph features remain. |
@@ -29,7 +29,7 @@ This chapter tracks the implementation status of all 21 phases, documents identi
 | 19 | Scheduler system | **Complete** | Durable store, polling executor, 4 LLM tools, conditional notification, cron/interval/once cadences, proactive media delivery, delivery streak tracking with route remap |
 | 20 | Skill system | **Complete** | Prompt-injected markdown skills; embedded built-ins (rust-embed); browser automation skill; workspace/user/system/embedded precedence; tool-readiness activation gating |
 | 21 | Persona governance | Planned | |
-| — | Web configurator | **Complete** | `runner web` subcommand, REST API, embedded SPA, onboarding wizard, config editing with backup/validation, lifecycle control, log viewing, host validation, token auth |
+| — | Web configurator | **Complete** | `oxydra web` subcommand, REST API, embedded SPA, onboarding wizard, config editing with backup/validation, lifecycle control, log viewing, host validation, token auth |
 
 ## Identified Gaps in Completed Phases
 
@@ -165,7 +165,7 @@ Built the foundation layer with zero internal dependencies:
 
 ### Phase 10: Runner + Isolation Infrastructure
 
-**Crates:** `types`, `runner`, `tools`, `runtime`, `shell-daemon`
+**Crates:** `types`, `runner`, `tools`, `runtime`, `oxydra-shelld`
 
 - `SandboxTier` enum: `MicroVm`, `Container`, `Process`
 - Runner global config: workspace root, user map, default tier, guest image references
@@ -210,7 +210,7 @@ Built the foundation layer with zero internal dependencies:
 - `EventReader`: dedicated blocking thread for crossterm input → `AppAction` mapping via `mpsc` channel
 - `TuiApp`: main `tokio::select!` loop with WebSocket split transport (reader/writer tasks), Hello handshake, reconnection with exponential backoff + jitter, `TerminalGuard` RAII for terminal safety, single-point-of-draw rendering
 - `oxydra-tui`: standalone binary entry point (clap CLI, UUID connection ID, multi-threaded tokio runtime)
-- `runner --tui` execs `oxydra-tui` binary; `--probe` flag preserves the old print-and-exit behavior
+- `oxydra --tui` execs `oxydra-tui` binary; `--probe` flag preserves the old print-and-exit behavior
 - **Multi-line input (Issue 6a):** Alt+Enter inserts a literal newline into the input buffer. The input bar expands vertically to accommodate multiple lines (up to 10 rows). Cursor position accounting handles logical newlines and visual wrapping.
 - **Runtime activity visibility (Issue 6b):** `RuntimeProgressEvent` / `RuntimeProgressKind` types added to `StreamItem`. The runtime emits `StreamItem::Progress` at `ProviderCall` and `ToolExecution` transitions. The gateway turn runner forwards them as `GatewayServerFrame::TurnProgress` frames. `TuiUiState.activity_status` tracks the latest message and it appears in the input bar title while a turn is active.
 - **Protocol v2 update:** `GATEWAY_PROTOCOL_VERSION` bumped from 1 to 2. `runtime_session_id` renamed to `session_id` in all protocol types (`GatewaySession`, `GatewayClientHello`, `GatewaySendTurn`, `GatewayCancelActiveTurn`) and all internal state (`UserSessionState`, `TuiUiState`, `RunnerTuiConnection`). `GatewayClientHello` gains `create_new_session: bool` field for explicit session creation control.
@@ -235,7 +235,7 @@ Built the foundation layer with zero internal dependencies:
 - **`ProviderCaps` extended:** Added `max_context_tokens` alongside `max_input_tokens`/`max_output_tokens`
 - **Google Gemini provider (`gemini.rs`):** Full implementation with real SSE streaming, `v1beta/models/{model}:generateContent` and `streamGenerateContent?alt=sse`, `x-goog-api-key` header authentication
 - **OpenAI Responses provider (`responses.rs`):** `/v1/responses` endpoint with `previous_response_id` session chaining via `Arc<Mutex<Option<String>>>`, typed input/output blocks, fallback to full context on chaining errors, `ResponsesToolCallAccumulator`
-- **Catalog snapshot commands:** `runner catalog fetch` (fetch from models.dev, filter, write snapshot + overrides), `runner catalog verify` (re-fetch and compare), `runner catalog show` (pretty-print summary)
+- **Catalog snapshot commands:** `oxydra catalog fetch` (fetch from models.dev, filter, write snapshot + overrides), `oxydra catalog verify` (re-fetch and compare), `oxydra catalog show` (pretty-print summary)
 - **Config validation:** `AgentConfig::validate()` resolves provider via registry; `validate_model_in_catalog()` uses `effective_catalog_provider()`; `ConfigError::UnknownModelForCatalogProvider` replaces old model validation errors
 
 
@@ -380,7 +380,7 @@ Built a complete durable scheduler that lets the LLM create and manage one-off a
   - `PINCHTAB_URL` + `BRIDGE_TOKEN` forwarded to oxydra-vm env so skill templates and shell commands can use them
   - Shell policy overlay: auto-adds `curl`, `jq`, `sleep` to allowlist and enables `allow_operators` when `BROWSER_ENABLED=true`
   - Health check polling (`GET /health`, 30s timeout, graceful degradation — `PINCHTAB_URL` only set on success)
-  - `docker/shell-vm-entrypoint.sh`: starts Pinchtab when `BROWSER_ENABLED=true`, cleans Chrome singleton locks, waits for Pinchtab to become healthy before exec'ing shell-daemon
+  - `docker/shell-vm-entrypoint.sh`: starts Pinchtab when `BROWSER_ENABLED=true`, cleans Chrome singleton locks, waits for Pinchtab to become healthy before exec'ing oxydra-shelld
   - Docker images updated: Pinchtab binary downloaded at build time (multi-arch `amd64`/`arm64`), `curl`/`jq` installed
 - **Logging**: skill discovery and activation at `info` level; non-activation reasons (missing tools, missing env vars) logged with specifics
 - **Tests**: 36 unit tests in `runner/src/skills.rs` (frontmatter parsing, discovery, deduplication, precedence, activation evaluation, rendering, token cap, prompt formatting, folder-based skills, actual browser skill file validation, browser activation scenarios); 22 runner tests for Pinchtab infrastructure (port allocation, token generation, browser env, shell overlay, reference copying, bootstrap envelope, startup integration, skill activation toggles); 9 browser skill tests (metadata parsing, token cap check, key sections validation, activation under different conditions, rendering, prompt integration, shell policy)

@@ -76,7 +76,7 @@ export OXYDRA_TAG=v0.3.0   # replace with the release you want
 curl -fsSL https://raw.githubusercontent.com/shantanugoel/oxydra/main/scripts/install-release.sh | bash -s -- --tag "$OXYDRA_TAG" --base-dir "$HOME"
 ```
 
-This installs the `runner`, `oxydra-vm`, `shell-daemon`, and `oxydra-tui` binaries to `~/.local/bin` and copies starter config templates to `~/.oxydra/`. If `~/.local/bin` is not in `PATH`:
+This installs the `oxydra`, `oxydra-vm`, `oxydra-shelld`, and `oxydra-tui` binaries to `~/.local/bin` and copies starter config templates to `~/.oxydra/`. If `~/.local/bin` is not in `PATH`:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -87,7 +87,7 @@ export PATH="$HOME/.local/bin:$PATH"
 Start the web configurator:
 
 ```bash
-runner --config .oxydra/runner.toml web
+oxydra --config .oxydra/runner.toml web
 ```
 
 Open **http://127.0.0.1:9400** in your browser and navigate to **Agent Config**. If you are running oxydra on a remote machine, you can use the `--bind 0.0.0.0:<port>` option to access it from another machine. 
@@ -118,13 +118,13 @@ export OPENAI_API_KEY=your-key-here
 Run the daemon (terminal 1):
 
 ```bash
-runner --config .oxydra/runner.toml --user alice start
+oxydra --config .oxydra/runner.toml --user alice start
 ```
 
 Connect with the TUI (terminal 2). This is optional, you can instead configure telegram in step 2 to use it via telegram as well:
 
 ```bash
-runner --tui --config .oxydra/runner.toml --user alice
+oxydra --tui --config .oxydra/runner.toml --user alice
 ```
 
 That's it — Oxydra is running. For install variants, manual TOML configuration, Docker setup on Linux, Telegram, TUI commands, process-mode fallback, and troubleshooting, see [Manual Install & Configuration](#manual-install--configuration).
@@ -155,7 +155,7 @@ See [docs/COMPARISON.md](docs/COMPARISON.md).
 
 | Symptom | Fix |
 |---|---|
-| Need to check logs | Run `runner logs --help` to see the available log retrieval options |
+| Need to check logs | Run `oxydra logs --help` to see the available log retrieval options |
 | `oxydra-tui was not found in PATH` | Ensure install dir is in `PATH` or run the binary directly |
 | Docker unreachable / `client error (Connect)` | Start Docker (`sudo systemctl start docker`); for Colima set `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` |
 | `Permission denied` accessing Docker socket | Add your user to the docker group: `sudo usermod -aG docker $USER` then run `newgrp docker` or log out and back in |
@@ -163,5 +163,5 @@ See [docs/COMPARISON.md](docs/COMPARISON.md).
 | Telegram bot does not respond | Verify `bot_token_env` points to an exported token, your Telegram user ID is listed in `[[channels.telegram.senders]]`, and `[memory] enabled = true` in `agent.toml` |
 | `micro_vm` start fails on macOS | Ensure Docker Desktop is installed and running |
 | `micro_vm` start fails on Linux (`firecracker` or config error) | Install `firecracker` and set `guest_images.firecracker_oxydra_vm_config` (and `guest_images.firecracker_shell_vm_config` for sidecar) |
-| `unknown model for catalog provider` | Use `runner catalog show` to inspect known models, or set `catalog.skip_catalog_validation = true` |
+| `unknown model for catalog provider` | Use `oxydra catalog show` to inspect known models, or set `catalog.skip_catalog_validation = true` |
 | 401/Unauthorized from provider | Check API key env var and `api_key_env` name in `agent.toml` |

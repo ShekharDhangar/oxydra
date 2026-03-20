@@ -6,9 +6,9 @@ use std::{
 
 use async_trait::async_trait;
 use mockall::mock;
-use serde_json::{Value, json};
 #[cfg(unix)]
-use shell_daemon::ShellDaemonServer;
+use oxydra_shelld::ShellDaemonServer;
+use serde_json::{Value, json};
 #[cfg(unix)]
 use tokio::net::UnixListener;
 use tokio::sync::mpsc;

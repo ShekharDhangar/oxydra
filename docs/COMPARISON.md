@@ -84,7 +84,7 @@ All four are Rust-based AI agent runtimes that emerged from the "\*Claw" ecosyst
 
 | Dimension | **Oxydra** | **ZeroClaw** | **IronClaw** | **MicroClaw** |
 |---|---|---|---|---|
-| **Deployment artifacts** | Runner + guest VM binaries + shell-daemon + TUI + Docker images | **Single ~16MB static binary** | Binary + PostgreSQL + pgvector | Single binary + YAML |
+| **Deployment artifacts** | Runner + guest VM binaries + oxydra-shelld + TUI + Docker images | **Single ~16MB static binary** | Binary + PostgreSQL + pgvector | Single binary + YAML |
 | **RAM at runtime** | Higher (VM pair per user) | **~5MB** | Higher (Postgres stack) | Moderate |
 | **Platforms** | Linux (amd64, arm64), macOS (arm64) | Linux, macOS, ARM, x86, RISC-V | Linux primarily | Linux, macOS |
 | **Setup complexity** | Medium (runner + guest images) | Low | **High** (NEAR AI account + PostgreSQL + pgvector) | Medium |

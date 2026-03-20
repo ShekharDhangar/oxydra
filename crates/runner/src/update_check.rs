@@ -1,4 +1,4 @@
-//! Version-check utilities for the `runner check-update` command.
+//! Version-check utilities for the `oxydra check-update` command.
 //!
 //! Queries the GitHub Releases API, caches the result locally (24-hour TTL),
 //! and compares the current binary version against the latest stable release
@@ -15,7 +15,7 @@ use types::RunnerGuestImages;
 
 const GITHUB_RELEASES_URL: &str = "https://api.github.com/repos/shantanugoel/oxydra/releases";
 
-const USER_AGENT: &str = concat!("oxydra-runner/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("oxydra/", env!("CARGO_PKG_VERSION"));
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 

@@ -92,6 +92,21 @@ assert_executable() {
   fi
 }
 
+assert_symlink_target() {
+  local path="$1"
+  local expected_target="$2"
+  if [[ ! -L "$path" ]]; then
+    echo "Assertion failed: expected symlink: $path" >&2
+    return 1
+  fi
+  local actual_target
+  actual_target="$(readlink "$path")"
+  if [[ "$actual_target" != "$expected_target" ]]; then
+    echo "Assertion failed: expected symlink $path -> $expected_target, got $actual_target" >&2
+    return 1
+  fi
+}
+
 assert_file_contains_literal() {
   local file="$1"
   local needle="$2"
@@ -120,11 +135,12 @@ cleanup_case() {
 write_runner_stub() {
   local destination="$1"
   local version="$2"
+  local binary_name="${3:-oxydra}"
   cat >"$destination" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "\${1:-}" == "--version" ]]; then
-  echo "runner ${version}"
+  echo "${binary_name} ${version}"
   exit 0
 fi
 
@@ -362,9 +378,9 @@ create_release_fixture() {
 
   mkdir -p "${release_dir}" "${payload_dir}" "${payload_dir}/examples/config" "${payload_dir}/examples/config/users"
 
-  write_runner_stub "${payload_dir}/runner" "$version"
+  write_runner_stub "${payload_dir}/oxydra" "$version"
   write_binary_stub "${payload_dir}/oxydra-vm" "oxydra-vm ${version}"
-  write_binary_stub "${payload_dir}/shell-daemon" "shell-daemon ${version}"
+  write_binary_stub "${payload_dir}/oxydra-shelld" "oxydra-shelld ${version}"
   write_binary_stub "${payload_dir}/oxydra-tui" "oxydra-tui ${version}"
 
   cat > "${payload_dir}/examples/config/runner.toml" <<'EOF'
@@ -406,7 +422,16 @@ EOF
 setup_existing_install() {
   local version="$1"
   mkdir -p "$INSTALL_DIR"
-  write_runner_stub "${INSTALL_DIR}/runner" "$version"
+  write_runner_stub "${INSTALL_DIR}/oxydra" "$version"
+  write_binary_stub "${INSTALL_DIR}/oxydra-vm" "old-oxydra-vm ${version}"
+  write_binary_stub "${INSTALL_DIR}/oxydra-shelld" "old-oxydra-shelld ${version}"
+  write_binary_stub "${INSTALL_DIR}/oxydra-tui" "old-oxydra-tui ${version}"
+}
+
+setup_existing_legacy_install() {
+  local version="$1"
+  mkdir -p "$INSTALL_DIR"
+  write_runner_stub "${INSTALL_DIR}/runner" "$version" "runner"
   write_binary_stub "${INSTALL_DIR}/oxydra-vm" "old-oxydra-vm ${version}"
   write_binary_stub "${INSTALL_DIR}/shell-daemon" "old-shell-daemon ${version}"
   write_binary_stub "${INSTALL_DIR}/oxydra-tui" "old-oxydra-tui ${version}"
@@ -475,9 +500,9 @@ test_fresh_install_path() {
     --no-pull)"
 
   assert_contains "$output" "Checksum verified: oxydra-v2.0.0-${HOST_PLATFORM}.tar.gz"
-  assert_executable "${INSTALL_DIR}/runner"
+  assert_executable "${INSTALL_DIR}/oxydra"
   assert_executable "${INSTALL_DIR}/oxydra-vm"
-  assert_executable "${INSTALL_DIR}/shell-daemon"
+  assert_executable "${INSTALL_DIR}/oxydra-shelld"
   assert_executable "${INSTALL_DIR}/oxydra-tui"
   assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'oxydra_vm = "ghcr.io/shantanugoel/oxydra-vm:v2.0.0"'
   assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'shell_vm  = "ghcr.io/shantanugoel/shell-vm:v2.0.0"'
@@ -519,10 +544,50 @@ test_upgrade_updates_tags_and_creates_backups() {
     return 1
   }
 
-  assert_file_exists "${backup_path}/binaries/runner"
+  assert_file_exists "${backup_path}/binaries/oxydra"
   assert_file_contains_literal "${backup_path}/config/.oxydra/runner.toml" 'oxydra_vm = "registry.example.com/acme/oxydra-vm:old-custom" # keep comment'
   assert_not_contains "$output" "Update these values before first run"
   assert_contains "$output" "Config updated in"
+}
+
+test_legacy_upgrade_creates_compat_symlinks_and_backups() {
+  setup_case
+  create_release_fixture "v2.0.0" "2.0.0"
+  setup_existing_legacy_install "1.0.0"
+  setup_existing_config
+
+  mkdir -p "${WORKSPACE}/.oxydra/workspaces/alice/ipc"
+  : > "${WORKSPACE}/.oxydra/workspaces/alice/ipc/runner-control.sock"
+
+  local output
+  output="$(run_installer_capture 0 \
+    --tag "v2.0.0" \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull)"
+
+  assert_contains "$output" "Runner daemon is currently active for user(s): alice"
+  assert_contains "$output" "'runner' has been renamed to 'oxydra'. A compatibility symlink was created."
+  assert_contains "$output" "'shell-daemon' has been renamed to 'oxydra-shelld'. A compatibility symlink was created."
+  assert_executable "${INSTALL_DIR}/oxydra"
+  assert_executable "${INSTALL_DIR}/oxydra-shelld"
+  assert_symlink_target "${INSTALL_DIR}/runner" "oxydra"
+  assert_symlink_target "${INSTALL_DIR}/shell-daemon" "oxydra-shelld"
+  assert_file_contains_literal "${RUNNER_START_LOG}" "alice"
+
+  local backup_path
+  backup_path="$(latest_backup_dir)"
+  [[ -n "$backup_path" ]] || {
+    echo "Assertion failed: expected legacy backup directory to exist" >&2
+    return 1
+  }
+
+  assert_file_exists "${backup_path}/binaries/runner"
+  assert_file_exists "${backup_path}/binaries/shell-daemon"
+  assert_contains "$("${INSTALL_DIR}/runner" --version)" "2.0.0"
+  assert_contains "$("${INSTALL_DIR}/shell-daemon")" "oxydra-shelld 2.0.0"
 }
 
 test_dry_run_keeps_state_unchanged() {
@@ -533,7 +598,7 @@ test_dry_run_keeps_state_unchanged() {
 
   local runner_before version_before output runner_after version_after
   runner_before="$(cat "${WORKSPACE}/.oxydra/runner.toml")"
-  version_before="$("${INSTALL_DIR}/runner" --version)"
+  version_before="$("${INSTALL_DIR}/oxydra" --version)"
 
   output="$(run_installer_capture 0 \
     --tag "v2.0.0" \
@@ -545,7 +610,7 @@ test_dry_run_keeps_state_unchanged() {
 
   assert_contains "$output" "Dry-run mode enabled. No changes will be made."
   runner_after="$(cat "${WORKSPACE}/.oxydra/runner.toml")"
-  version_after="$("${INSTALL_DIR}/runner" --version)"
+  version_after="$("${INSTALL_DIR}/oxydra" --version)"
   assert_equals "$runner_before" "$runner_after"
   assert_equals "$version_before" "$version_after"
   assert_file_not_exists "${WORKSPACE}/.oxydra/runner.toml.v2.0.0.new"
@@ -598,7 +663,7 @@ test_checksum_mismatch_aborts_upgrade() {
     --no-pull)"
 
   assert_contains "$output" "checksum verification failed"
-  assert_contains "$("${INSTALL_DIR}/runner" --version)" "1.0.0"
+  assert_contains "$("${INSTALL_DIR}/oxydra" --version)" "1.0.0"
   assert_file_not_exists "$BACKUP_DIR"
 }
 
@@ -621,7 +686,7 @@ test_rollback_restores_after_failed_install_step() {
 
   assert_contains "$output" "Installation failed. Restore from backup? [auto-yes]"
   assert_contains "$output" "Rollback complete."
-  assert_contains "$("${INSTALL_DIR}/runner" --version)" "1.0.0"
+  assert_contains "$("${INSTALL_DIR}/oxydra" --version)" "1.0.0"
   assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'oxydra_vm = "registry.example.com/acme/oxydra-vm:old-custom" # keep comment'
 
   local backup_path
@@ -630,6 +695,33 @@ test_rollback_restores_after_failed_install_step() {
     echo "Assertion failed: expected rollback backup directory to exist" >&2
     return 1
   }
+}
+
+test_legacy_upgrade_rollback_restores_legacy_binaries() {
+  setup_case
+  create_release_fixture "v2.0.0" "2.0.0"
+  setup_existing_legacy_install "1.0.0"
+  setup_existing_config
+
+  export MOCK_INSTALL_FAIL_ONCE=1
+  export MOCK_INSTALL_FAIL_ON_BINARY=oxydra-shelld
+
+  local output
+  output="$(run_installer_capture 1 \
+    --tag "v2.0.0" \
+    --base-dir "$WORKSPACE" \
+    --install-dir "$INSTALL_DIR" \
+    --backup-dir "$BACKUP_DIR" \
+    --yes \
+    --no-pull)"
+
+  assert_contains "$output" "Installation failed. Restore from backup? [auto-yes]"
+  assert_contains "$output" "Rollback complete."
+  assert_contains "$("${INSTALL_DIR}/runner" --version)" "1.0.0"
+  assert_contains "$("${INSTALL_DIR}/oxydra-vm")" "old-oxydra-vm 1.0.0"
+  assert_contains "$("${INSTALL_DIR}/shell-daemon")" "old-shell-daemon 1.0.0"
+  assert_file_not_exists "${INSTALL_DIR}/oxydra"
+  assert_file_not_exists "${INSTALL_DIR}/oxydra-shelld"
 }
 
 test_docker_prepull_runs_when_not_disabled() {
@@ -721,7 +813,7 @@ test_downgrade_prints_warning() {
     --no-pull)"
 
   assert_contains "$output" "Warning: downgrading from v2.0.0 -> v1.0.0"
-  assert_contains "$("${INSTALL_DIR}/runner" --version)" "1.0.0"
+  assert_contains "$("${INSTALL_DIR}/oxydra" --version)" "1.0.0"
   assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'oxydra_vm = "registry.example.com/acme/oxydra-vm:v1.0.0" # keep comment'
   assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'shell_vm  = "docker.io/acme/shell-vm:v1.0.0"'
 }
@@ -740,7 +832,7 @@ test_skip_config_omits_config_directory() {
     --no-pull \
     --skip-config)"
 
-  assert_executable "${INSTALL_DIR}/runner"
+  assert_executable "${INSTALL_DIR}/oxydra"
   assert_executable "${INSTALL_DIR}/oxydra-vm"
   assert_file_not_exists "${WORKSPACE}/.oxydra"
   assert_contains "$output" "Skipping config initialization and update (--skip-config)"
@@ -771,7 +863,7 @@ test_overwrite_config_replaces_existing() {
 }
 
 test_rollback_after_partial_binary_install() {
-  # Fail on a LATER binary (shell-daemon) so runner + oxydra-vm are already
+  # Fail on a LATER binary (oxydra-shelld) so runner + oxydra-vm are already
   # overwritten with new versions. Rollback must restore ALL of them.
   setup_case
   create_release_fixture "v2.0.0" "2.0.0"
@@ -779,7 +871,7 @@ test_rollback_after_partial_binary_install() {
   setup_existing_config
 
   export MOCK_INSTALL_FAIL_ONCE=1
-  export MOCK_INSTALL_FAIL_ON_BINARY=shell-daemon
+  export MOCK_INSTALL_FAIL_ON_BINARY=oxydra-shelld
 
   local output
   output="$(run_installer_capture 1 \
@@ -793,10 +885,10 @@ test_rollback_after_partial_binary_install() {
   assert_contains "$output" "Installation failed. Restore from backup? [auto-yes]"
   assert_contains "$output" "Rollback complete."
   # All binaries must be restored to old version, including runner which was
-  # successfully overwritten before shell-daemon failed.
-  assert_contains "$("${INSTALL_DIR}/runner" --version)" "1.0.0"
+  # successfully overwritten before oxydra-shelld failed.
+  assert_contains "$("${INSTALL_DIR}/oxydra" --version)" "1.0.0"
   assert_contains "$("${INSTALL_DIR}/oxydra-vm")" "old-oxydra-vm 1.0.0"
-  assert_contains "$("${INSTALL_DIR}/shell-daemon")" "old-shell-daemon 1.0.0"
+  assert_contains "$("${INSTALL_DIR}/oxydra-shelld")" "old-oxydra-shelld 1.0.0"
   assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" 'oxydra_vm = "registry.example.com/acme/oxydra-vm:old-custom" # keep comment'
 }
 
@@ -814,8 +906,8 @@ test_latest_tag_resolution_without_explicit_tag() {
     --no-pull)"
 
   assert_contains "$output" "Installing Oxydra v3.0.0"
-  assert_executable "${INSTALL_DIR}/runner"
-  assert_contains "$("${INSTALL_DIR}/runner" --version)" "3.0.0"
+  assert_executable "${INSTALL_DIR}/oxydra"
+  assert_contains "$("${INSTALL_DIR}/oxydra" --version)" "3.0.0"
   assert_file_contains_literal "${WORKSPACE}/.oxydra/runner.toml" ':v3.0.0"'
 }
 
@@ -939,7 +1031,7 @@ test_noninteractive_stdin_aborts_when_daemon_running() {
   }
   assert_contains "$output" "could not stop running daemon"
   # Binaries must remain untouched
-  assert_contains "$("${INSTALL_DIR}/runner" --version)" "1.0.0"
+  assert_contains "$("${INSTALL_DIR}/oxydra" --version)" "1.0.0"
 }
 
 test_base_dir_auto_created() {
@@ -959,7 +1051,7 @@ test_base_dir_auto_created() {
 
   assert_file_exists "${new_base}/.oxydra/runner.toml"
   assert_file_exists "${new_base}/.oxydra/agent.toml"
-  assert_executable "${INSTALL_DIR}/runner"
+  assert_executable "${INSTALL_DIR}/oxydra"
 }
 
 run_case() {
@@ -990,10 +1082,12 @@ main() {
 
   run_case test_fresh_install_path
   run_case test_upgrade_updates_tags_and_creates_backups
+  run_case test_legacy_upgrade_creates_compat_symlinks_and_backups
   run_case test_dry_run_keeps_state_unchanged
   run_case test_same_version_guard_and_force_mode
   run_case test_checksum_mismatch_aborts_upgrade
   run_case test_rollback_restores_after_failed_install_step
+  run_case test_legacy_upgrade_rollback_restores_legacy_binaries
   run_case test_docker_prepull_runs_when_not_disabled
   run_case test_no_pull_flag_skips_docker_prepull
   run_case test_downgrade_prints_warning

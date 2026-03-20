@@ -96,17 +96,17 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Linux binaries
-        run: cargo zigbuild --release --target ${{ matrix.rust_target }} --bin runner --bin oxydra-vm --bin shell-daemon --bin oxydra-tui
+        run: cargo zigbuild --release --target ${{ matrix.rust_target }} --bin oxydra --bin oxydra-vm --bin oxydra-shelld --bin oxydra-tui
 
       - name: Package linux release artifact
         run: |
           mkdir -p "dist/linux-${{ matrix.arch }}/examples/config"
-          cp "target/${{ matrix.rust_target }}/release/runner" "dist/linux-${{ matrix.arch }}/runner"
+          cp "target/${{ matrix.rust_target }}/release/oxydra" "dist/linux-${{ matrix.arch }}/oxydra"
           cp "target/${{ matrix.rust_target }}/release/oxydra-vm" "dist/linux-${{ matrix.arch }}/oxydra-vm"
-          cp "target/${{ matrix.rust_target }}/release/shell-daemon" "dist/linux-${{ matrix.arch }}/shell-daemon"
+          cp "target/${{ matrix.rust_target }}/release/oxydra-shelld" "dist/linux-${{ matrix.arch }}/oxydra-shelld"
           cp "target/${{ matrix.rust_target }}/release/oxydra-tui" "dist/linux-${{ matrix.arch }}/oxydra-tui"
           cp examples/config/*.toml "dist/linux-${{ matrix.arch }}/examples/config/"
-          tar -C "dist/linux-${{ matrix.arch }}" -czf "dist/oxydra-${RELEASE_TAG}-linux-${{ matrix.arch }}.tar.gz" runner oxydra-vm shell-daemon oxydra-tui examples/config
+          tar -C "dist/linux-${{ matrix.arch }}" -czf "dist/oxydra-${RELEASE_TAG}-linux-${{ matrix.arch }}.tar.gz" oxydra oxydra-vm oxydra-shelld oxydra-tui examples/config
           shasum -a 256 "dist/oxydra-${RELEASE_TAG}-linux-${{ matrix.arch }}.tar.gz" > "dist/SHA256SUMS-linux-${{ matrix.arch }}"
 
       - name: Build and push linux Docker images
@@ -121,7 +121,7 @@ jobs:
 
           mkdir -p "docker/staging/linux-${{ matrix.arch }}"
           cp "target/${{ matrix.rust_target }}/release/oxydra-vm" "docker/staging/linux-${{ matrix.arch }}/oxydra-vm"
-          cp "target/${{ matrix.rust_target }}/release/shell-daemon" "docker/staging/linux-${{ matrix.arch }}/shell-daemon"
+          cp "target/${{ matrix.rust_target }}/release/oxydra-shelld" "docker/staging/linux-${{ matrix.arch }}/oxydra-shelld"
 
           docker build \
             --platform "${{ matrix.platform }}" \
@@ -133,7 +133,7 @@ jobs:
 
           docker build \
             --platform "${{ matrix.platform }}" \
-            --build-arg "BINARY=docker/staging/linux-${{ matrix.arch }}/shell-daemon" \
+            --build-arg "BINARY=docker/staging/linux-${{ matrix.arch }}/oxydra-shelld" \
             --target shell-vm \
             -t "${SHELL_IMAGE}:${RELEASE_TAG}-linux-${{ matrix.arch }}" \
             -f docker/Dockerfile.prebuilt \
@@ -174,17 +174,17 @@ jobs:
         run: rustup target add wasm32-wasip1
 
       - name: Build macOS binaries
-        run: cargo build --release --bin runner --bin oxydra-vm --bin shell-daemon --bin oxydra-tui
+        run: cargo build --release --bin oxydra --bin oxydra-vm --bin oxydra-shelld --bin oxydra-tui
 
       - name: Package macOS release artifact
         run: |
           mkdir -p dist/macos-arm64/examples/config
-          cp target/release/runner dist/macos-arm64/runner
+          cp target/release/oxydra dist/macos-arm64/oxydra
           cp target/release/oxydra-vm dist/macos-arm64/oxydra-vm
-          cp target/release/shell-daemon dist/macos-arm64/shell-daemon
+          cp target/release/oxydra-shelld dist/macos-arm64/oxydra-shelld
           cp target/release/oxydra-tui dist/macos-arm64/oxydra-tui
           cp examples/config/*.toml dist/macos-arm64/examples/config/
-          tar -C dist/macos-arm64 -czf "dist/oxydra-${RELEASE_TAG}-macos-arm64.tar.gz" runner oxydra-vm shell-daemon oxydra-tui examples/config
+          tar -C dist/macos-arm64 -czf "dist/oxydra-${RELEASE_TAG}-macos-arm64.tar.gz" oxydra oxydra-vm oxydra-shelld oxydra-tui examples/config
           shasum -a 256 "dist/oxydra-${RELEASE_TAG}-macos-arm64.tar.gz" > dist/SHA256SUMS-macos-arm64
 
       - name: Upload macOS artifacts
